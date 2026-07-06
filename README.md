@@ -20,7 +20,7 @@ The project is intended for Ubuntu 22.04 with a C++17 compiler and CMake 3.16 or
 - Limbo Bookshelf parser
 - ISPD2005 Bookshelf benchmark, for example `adaptec1`
 
-Limbo is optional at configure time only so that the repository can still build in minimal CI containers. For production use, pass `-DLIMBO_ROOT=/path/to/limbo`; when the Limbo header is found, `LimboBookshelfAdapter` calls `BookshelfParser::read` and receives nodes, nets, pins, placement, and rows through Limbo callbacks. Without Limbo headers, the adapter prints a warning and uses a small compatibility reader for local smoke testing.
+Limbo is optional at configure time only so that the repository can still build in minimal CI containers. For production use, pass `-DLIMBO_ROOT=/home/djw/Desktop/GlobalPlacement_huawei/thrid_party/Limbo/limbo`; when the Limbo header is found, `LimboBookshelfAdapter` calls `BookshelfParser::read` and receives nodes, nets, pins, placement, and rows through Limbo callbacks. Without Limbo headers, the adapter prints a warning and uses a small compatibility reader for local smoke testing.
 
 ## Directory Structure
 
@@ -136,22 +136,22 @@ ISPD2005 Bookshelf .aux
 rm -rf build
 mkdir build
 cd build
-cmake .. -DLIMBO_ROOT=/path/to/limbo
+cmake .. -DLIMBO_ROOT=/home/djw/Desktop/GlobalPlacement_huawei/thrid_party/Limbo/limbo
 make -j$(nproc)
 ```
 
-If Limbo is installed in a nonstandard location, `LIMBO_ROOT` should point to the directory that contains the `limbo/` include tree or its immediate source include root.
+For the current VM, `LIMBO_ROOT` defaults to `/home/djw/Desktop/GlobalPlacement_huawei/thrid_party/Limbo/limbo`. This is the Limbo source include directory; CMake detects it, adds its parent as the include directory so `#include <limbo/...>` works, and links `libbookshelfparser` from nearby `lib`/`build/lib` directories. If Limbo is installed elsewhere, `LIMBO_ROOT` may point to an installation prefix containing `include/limbo`, a source root containing `limbo/`, or the `limbo/` source directory itself.
 
 ## How to Run on adaptec1
 
 ```bash
-./global_placer --aux /path/to/ispd2005/adaptec1/adaptec1.aux
+./global_placer --aux /home/djw/Desktop/GlobalPlacement_huawei/testbench/ispd2005/adaptec1/adaptec1.aux
 ```
 
 This repository also includes a helper script:
 
 ```bash
-./scripts/run_adaptec1.sh testbench/ispd2005/adaptec1/adaptec1.aux
+./scripts/run_adaptec1.sh
 ```
 
 ## Expected Summary Output

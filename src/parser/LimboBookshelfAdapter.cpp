@@ -125,7 +125,7 @@ bool LimboBookshelfAdapter::read(const std::string& aux_path) {
     CallbackDB callback_db(db_);
     return BookshelfParser::read(callback_db, aux_path);
 #else
-    std::cerr << "Warning: built without Limbo headers; using a compatibility Bookshelf reader. Configure with -DLIMBO_ROOT=/path/to/limbo to call Limbo.\n";
+    std::cerr << "Warning: built without Limbo headers; using a compatibility Bookshelf reader. Configure with -DLIMBO_ROOT=/home/djw/Desktop/GlobalPlacement_huawei/thrid_party/Limbo/limbo to call Limbo.\n";
     auto aux = std::filesystem::path(aux_path);
     auto files = parseAux(aux_path);
     parseNodes(db_, resolve(aux, files.nodes));
