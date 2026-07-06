@@ -1,0 +1,12 @@
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.o
+*.a
+*.so
+*.log
+*.out
+*.rpt
+.vscode/
+.idea/
