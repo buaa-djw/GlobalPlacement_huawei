@@ -30,7 +30,9 @@ public:
         }
     }
     void add_bookshelf_row(BookshelfParser::Row const& r) override {
-        Row row; row.y = r.origin[1]; row.height = r.height; row.site_width = r.site_width; row.site_spacing = r.site_spacing; row.x_start = r.origin[0]; row.num_sites = r.site_num; row.x_end = row.x_start + row.num_sites * row.site_spacing; db_.addRow(row);
+        Row row; row.y = r.origin[1]; 
+        row.height = r.height; 
+        row.site_width = r.site_width; row.site_spacing = r.site_spacing; row.x_start = r.origin[0]; row.num_sites = r.site_num; row.x_end = row.x_start + row.num_sites * row.site_spacing; db_.addRow(row);
     }
     void set_bookshelf_node_position(std::string const& name, double x, double y, std::string const&, std::string const&, bool fixed) override { db_.setCellLocation(name, x, y, fixed); }
     void set_bookshelf_design(std::string&) override {}

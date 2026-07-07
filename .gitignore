@@ -10,3 +10,27 @@ CMakeCache.txt
 *.rpt
 .vscode/
 .idea/
+
+# local generated reports
+placementdb_summary.txt
+
+# uncompressed ISPD2005 benchmark files for local testing
+testbench/ispd2005/**/*.aux
+testbench/ispd2005/**/*.nodes
+testbench/ispd2005/**/*.nets
+testbench/ispd2005/**/*.pl
+testbench/ispd2005/**/*.scl
+testbench/ispd2005/**/*.wts
+testbench/ispd2005/adaptec3/
+
+# build outputs
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.o
+*.a
+*.so
+*.log
+*.out
+*.rpt

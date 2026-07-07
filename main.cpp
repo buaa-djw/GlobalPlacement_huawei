@@ -2,7 +2,11 @@
 #include "parser/LimboBookshelfAdapter.h"
 
 #include <iostream>
+#include <fstream>
 #include <string>
+#include <algorithm>
+#include <iomanip>
+#include <limits>
 
 namespace {
 void printUsage(const char* argv0) {
@@ -23,6 +27,8 @@ int main(int argc, char** argv) {
         PlacementDB db;
         LimboBookshelfAdapter adapter(db);
         if (!adapter.read(aux_path)) { std::cerr << "Failed to read Bookshelf design: " << aux_path << '\n'; return 2; }
+        std::ofstream fout("placementdb_summary.txt");
+        db.printSummary(fout);   
         db.printSummary(std::cout);
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << '\n'; return 2;
