@@ -16,6 +16,7 @@ add_compile_definitions(_GLIBCXX_USE_CXX11_ABI=1)
 # =========================
 set(LIMBO_ROOT
     "/home/djw/Desktop/GlobalPlacement_huawei/thrid_party/Limbo"
+    CACHE PATH "Limbo root directory"
 )
 
 set(LIMBO_INCLUDE_DIR
@@ -42,35 +43,27 @@ find_package(ZLIB REQUIRED)
 # =========================
 # Check Limbo files
 # =========================
+set(HAVE_LIMBO_FILES TRUE)
 if(NOT EXISTS "${LIMBO_BOOKSHELF_HEADER}")
-    message(FATAL_ERROR
-        "Cannot find Limbo BookshelfDriver.h:\n"
-        "  ${LIMBO_BOOKSHELF_HEADER}\n"
-        "Please check LIMBO_ROOT."
-    )
+    message(WARNING "Cannot find Limbo BookshelfDriver.h: ${LIMBO_BOOKSHELF_HEADER}; using compatibility parser")
+    set(HAVE_LIMBO_FILES FALSE)
 endif()
-
 if(NOT EXISTS "${LIMBO_BOOKSHELF_PARSER_LIBRARY}")
-    message(FATAL_ERROR
-        "Cannot find libbookshelfparser.a:\n"
-        "  ${LIMBO_BOOKSHELF_PARSER_LIBRARY}\n"
-        "Please build Limbo Bookshelf parser first."
-    )
+    message(WARNING "Cannot find libbookshelfparser.a: ${LIMBO_BOOKSHELF_PARSER_LIBRARY}; using compatibility parser")
+    set(HAVE_LIMBO_FILES FALSE)
 endif()
-
 if(NOT EXISTS "${LIMBO_GZSTREAM_LIBRARY}")
-    message(FATAL_ERROR
-        "Cannot find libgzstream.a:\n"
-        "  ${LIMBO_GZSTREAM_LIBRARY}\n"
-        "Please build Limbo gzstream first."
-    )
+    message(WARNING "Cannot find libgzstream.a: ${LIMBO_GZSTREAM_LIBRARY}; using compatibility parser")
+    set(HAVE_LIMBO_FILES FALSE)
 endif()
 
 message(STATUS "Using Limbo root: ${LIMBO_ROOT}")
 message(STATUS "Using Limbo include directory: ${LIMBO_INCLUDE_DIR}")
-message(STATUS "Using Limbo Bookshelf parser library: ${LIMBO_BOOKSHELF_PARSER_LIBRARY}")
-message(STATUS "Using Limbo gzstream library: ${LIMBO_GZSTREAM_LIBRARY}")
 message(STATUS "Using ZLIB: ${ZLIB_LIBRARIES}")
+if(HAVE_LIMBO_FILES)
+    message(STATUS "Using Limbo Bookshelf parser library: ${LIMBO_BOOKSHELF_PARSER_LIBRARY}")
+    message(STATUS "Using Limbo gzstream library: ${LIMBO_GZSTREAM_LIBRARY}")
+endif()
 
 # =========================
 # placement_db library
@@ -79,6 +72,8 @@ add_library(placement_db STATIC
     src/db/PlacementDB.cpp
     src/evaluator/HPWLEvaluator.cpp
     src/parser/LimboBookshelfAdapter.cpp
+    src/grid/BinGrid.cpp
+    src/utils/Logger.cpp
 )
 
 target_include_directories(placement_db PUBLIC
@@ -86,20 +81,16 @@ target_include_directories(placement_db PUBLIC
     ${LIMBO_INCLUDE_DIR}
 )
 
-target_compile_definitions(placement_db PUBLIC
-    HAVE_LIMBO_BOOKSHELF
-)
-
-# 注意：
-# libbookshelfparser.a 依赖 libgzstream.a
-# libgzstream.a 依赖 zlib
-# 链接顺序必须是：
-#   libbookshelfparser.a -> libgzstream.a -> ZLIB::ZLIB
-target_link_libraries(placement_db PUBLIC
-    "${LIMBO_BOOKSHELF_PARSER_LIBRARY}"
-    "${LIMBO_GZSTREAM_LIBRARY}"
-    ZLIB::ZLIB
-)
+if(HAVE_LIMBO_FILES)
+    target_compile_definitions(placement_db PUBLIC HAVE_LIMBO_BOOKSHELF)
+    target_link_libraries(placement_db PUBLIC
+        "${LIMBO_BOOKSHELF_PARSER_LIBRARY}"
+        "${LIMBO_GZSTREAM_LIBRARY}"
+        ZLIB::ZLIB
+    )
+else()
+    target_link_libraries(placement_db PUBLIC ZLIB::ZLIB)
+endif()
 
 # =========================
 # main executable
@@ -110,9 +101,6 @@ add_executable(global_placer
 
 target_link_libraries(global_placer PRIVATE
     placement_db
-    "${LIMBO_BOOKSHELF_PARSER_LIBRARY}"
-    "${LIMBO_GZSTREAM_LIBRARY}"
-    ZLIB::ZLIB
 )
 
 # =========================
@@ -127,9 +115,6 @@ if(BUILD_TESTING)
 
     target_link_libraries(test_placement_db PRIVATE
         placement_db
-        "${LIMBO_BOOKSHELF_PARSER_LIBRARY}"
-        "${LIMBO_GZSTREAM_LIBRARY}"
-        ZLIB::ZLIB
     )
 
     add_test(NAME placement_db_unit COMMAND test_placement_db)
@@ -140,10 +125,19 @@ if(BUILD_TESTING)
 
     target_link_libraries(test_hpwl PRIVATE
         placement_db
-        "${LIMBO_BOOKSHELF_PARSER_LIBRARY}"
-        "${LIMBO_GZSTREAM_LIBRARY}"
-        ZLIB::ZLIB
     )
 
     add_test(NAME hpwl_unit COMMAND test_hpwl)
+
+    add_executable(test_bin_grid
+        tests/test_bin_grid.cpp
+    )
+    target_link_libraries(test_bin_grid PRIVATE placement_db)
+    add_test(NAME bin_grid_unit COMMAND test_bin_grid)
+
+    add_executable(test_logger
+        tests/test_logger.cpp
+    )
+    target_link_libraries(test_logger PRIVATE placement_db)
+    add_test(NAME logger_unit COMMAND test_logger)
 endif()

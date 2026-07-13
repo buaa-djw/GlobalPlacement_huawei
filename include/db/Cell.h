@@ -13,4 +13,7 @@ struct Cell {
     bool is_terminal = false;
     bool is_fixed = false;
     std::vector<int> pin_ids;
+
+    /** @brief Return true only for cells that may be moved by placement. */
+    bool isMovable() const { return !is_fixed && !is_terminal; }
 };

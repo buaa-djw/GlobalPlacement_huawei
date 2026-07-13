@@ -5,6 +5,7 @@
 #include "db/Pin.h"
 #include "db/Row.h"
 #include "geometry/Point.h"
+#include "geometry/Box.h"
 
 #include <iosfwd>
 #include <string>
@@ -33,6 +34,16 @@ public:
     const Pin& pin(int id) const;
 
     Point pinPosition(int pin_id) const;
+
+    /**
+     * @brief Return the legal placement core bounds.
+     *
+     * Rows define the legal placement core when available.  If no rows are
+     * present, the database falls back to the bounding box of all cells so unit
+     * tests and incomplete benchmarks still have a deterministic core.
+     * Empty or zero-area databases throw instead of creating invalid grids.
+     */
+    Box coreBounds() const;
 
     const std::vector<Cell>& cells() const { return cells_; }
     const std::vector<Net>& nets() const { return nets_; }
