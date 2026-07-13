@@ -84,6 +84,39 @@ Point PlacementDB::pinPosition(int pin_id) const {
                  c.y + 0.5 * c.height + p.offset_y};
 }
 
+
+Box PlacementDB::coreBounds() const {
+    double lx = std::numeric_limits<double>::infinity();
+    double ly = std::numeric_limits<double>::infinity();
+    double ux = -std::numeric_limits<double>::infinity();
+    double uy = -std::numeric_limits<double>::infinity();
+
+    if (!rows_.empty()) {
+        for (const Row& row : rows_) {
+            lx = std::min(lx, row.x_start);
+            ux = std::max(ux, row.x_end);
+            ly = std::min(ly, row.y);
+            uy = std::max(uy, row.y + row.height);
+        }
+    } else {
+        if (cells_.empty()) {
+            throw std::runtime_error("PlacementDB::coreBounds: database has neither rows nor cells");
+        }
+        for (const Cell& cell : cells_) {
+            lx = std::min(lx, cell.x);
+            ux = std::max(ux, cell.x + cell.width);
+            ly = std::min(ly, cell.y);
+            uy = std::max(uy, cell.y + cell.height);
+        }
+    }
+
+    const Box core{lx, ly, ux, uy};
+    if (!core.valid()) {
+        throw std::runtime_error("PlacementDB::coreBounds: computed core has non-positive area");
+    }
+    return core;
+}
+
 void PlacementDB::setCellLocation(const std::string& name, double x, double y, bool fixed) {
     if (!hasCell(name)) {
         std::cerr << "Warning: .pl references unknown cell '" << name << "'\n";

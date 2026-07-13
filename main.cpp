@@ -1,55 +1,140 @@
 #include "db/PlacementDB.h"
 #include "evaluator/HPWLEvaluator.h"
+#include "grid/BinGrid.h"
 #include "parser/LimboBookshelfAdapter.h"
+#include "utils/Logger.h"
 
-#include <iostream>
+#include <cstdlib>
+#include <filesystem>
 #include <fstream>
-#include <string>
 #include <iomanip>
-
-
+#include <iostream>
+#include <sstream>
+#include <string>
 
 namespace {
+struct Options {
+    std::string aux_path;
+    int bins_x = 64;
+    int bins_y = 64;
+    double target_density = 0.9;
+    std::string log_path = "result/global_placer.log";
+    LogLevel log_level = LogLevel::Info;
+};
+
 void printUsage(const char* argv0) {
-    std::cerr << "Usage:\n  " << argv0 << " --aux <path_to_bookshelf_aux>\n";
+    std::cerr << "Usage:\n  " << argv0
+              << " --aux <path> [--bins <nx> <ny>] [--target-density <value>]"
+              << " [--log <path>] [--log-level <debug|info|warn|error>]\n";
+}
+
+Options parseArgs(int argc, char** argv) {
+    Options opt;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--aux" && i + 1 < argc) opt.aux_path = argv[++i];
+        else if (arg == "--bins" && i + 2 < argc) { opt.bins_x = std::stoi(argv[++i]); opt.bins_y = std::stoi(argv[++i]); }
+        else if (arg == "--target-density" && i + 1 < argc) opt.target_density = std::stod(argv[++i]);
+        else if (arg == "--log" && i + 1 < argc) opt.log_path = argv[++i];
+        else if (arg == "--log-level" && i + 1 < argc) opt.log_level = parseLogLevel(argv[++i]);
+        else if (arg == "--help" || arg == "-h") { printUsage(argv[0]); std::exit(EXIT_SUCCESS); }
+        else throw std::invalid_argument("unknown or incomplete argument: " + arg);
+    }
+    if (opt.aux_path.empty()) throw std::invalid_argument("missing required --aux <path>");
+    return opt;
+}
+
+std::string binGridSummary(const BinGrid& grid) {
+    const Box& c = grid.coreBounds();
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(3)
+       << "========== BinGrid Summary ==========" << '\n'
+       << "Core             : (" << c.lx << ", " << c.ly << ") - (" << c.ux << ", " << c.uy << ")\n"
+       << "Grid             : " << grid.numBinsX() << " x " << grid.numBinsY() << '\n'
+       << "Bin size         : " << grid.binWidth() << " x " << grid.binHeight() << '\n'
+       << "Target density   : " << grid.targetDensity() << '\n'
+       << "Movable area     : " << grid.totalMovableArea() << '\n'
+       << "Fixed area       : " << grid.totalFixedArea() << '\n'
+       << "Total overflow   : " << grid.totalOverflow() << '\n'
+       << "Overflow bins    : " << grid.overflowBinCount() << '\n'
+       << "Max utilization  : " << grid.maxUtilization() << '\n'
+       << "=====================================";
+    return os.str();
 }
 }
 
 int main(int argc, char** argv) {
-    std::string aux_path;
-    for (int i = 1; i < argc; ++i) {
-        const std::string arg = argv[i];
-        if (arg == "--aux" && i + 1 < argc) aux_path = argv[++i];
-        else if (arg == "--help" || arg == "-h") { printUsage(argv[0]); return 0; }
-        else { std::cerr << "Unknown or incomplete argument: " << arg << '\n'; printUsage(argv[0]); return 1; }
-    }
-    if (aux_path.empty()) { printUsage(argv[0]); return 1; }
+    bool logger_ready = false;
     try {
+        const Options opt = parseArgs(argc, argv);
+        Logger::instance().initialize(opt.log_path, opt.log_level, true);
+        logger_ready = true;
+        LOG_INFO("program started");
+        LOG_INFO("resolved command-line arguments: aux=" << opt.aux_path << ", bins=" << opt.bins_x << "x" << opt.bins_y << ", target_density=" << opt.target_density);
+        LOG_INFO("log file path: " << opt.log_path);
+        LOG_INFO("benchmark path: " << opt.aux_path);
+        if (opt.bins_x <= 0 || opt.bins_y <= 0 || opt.target_density <= 0.0 || opt.target_density > 1.0) {
+            printUsage(argv[0]);
+            LOG_FATAL("illegal BinGrid arguments: bins=" << opt.bins_x << "x" << opt.bins_y << ", target_density=" << opt.target_density);
+        }
+
         PlacementDB db;
         LimboBookshelfAdapter adapter(db);
-        if (!adapter.read(aux_path)) { std::cerr << "Failed to read Bookshelf design: " << aux_path << '\n'; return 2; }
+        LOG_INFO("Bookshelf parsing started");
+        if (!adapter.read(opt.aux_path)) LOG_FATAL("Failed to read Bookshelf design: " << opt.aux_path);
+        LOG_INFO("Bookshelf parsing completed");
+        LOG_INFO("cell/net/pin/row counts: cells=" << db.cells().size() << ", nets=" << db.nets().size() << ", pins=" << db.pins().size() << ", rows=" << db.rows().size());
+
+        LOG_INFO("HPWL evaluation started");
         HPWLEvaluator hpwl_evaluator;
-        double total_hpwl = 0;
-        for(std::size_t i = 0; i < db.nets().size(); i++){
+        double total_hpwl = 0.0;
+        for (std::size_t i = 0; i < db.nets().size(); ++i) {
             const int net_id = static_cast<int>(i);
             const double net_hpwl = hpwl_evaluator.netHPWL(db, net_id);
             db.addNetHPWL(net_id, net_hpwl);
             total_hpwl += net_hpwl;
         }
+        LOG_INFO("total HPWL: " << std::fixed << std::setprecision(3) << total_hpwl);
 
-        std::ofstream fout("../result/placementdb_summary.txt");
+        LOG_INFO("BinGrid construction started");
+        BinGrid grid(db, opt.bins_x, opt.bins_y, opt.target_density);
+        const Box& core = grid.coreBounds();
+        LOG_INFO("core bounds: (" << core.lx << ", " << core.ly << ") - (" << core.ux << ", " << core.uy << ")");
+        LOG_INFO("bin count: " << grid.numBins() << ", bin size=" << grid.binWidth() << "x" << grid.binHeight() << ", target density=" << grid.targetDensity());
+        LOG_INFO("BinGrid totals: movable_area=" << grid.totalMovableArea() << ", fixed_area=" << grid.totalFixedArea() << ", total_overflow=" << grid.totalOverflow() << ", overflow_bins=" << grid.overflowBinCount() << ", max_utilization=" << grid.maxUtilization());
+
+        std::filesystem::create_directories("result");
+        const std::string placement_summary = "result/placementdb_summary.txt";
+        std::ofstream fout(placement_summary);
+        if (!fout) LOG_FATAL("cannot open summary output: " << placement_summary);
         db.printSummary(fout);
-        fout << "\n[Initial Placement Evaluation]\n";
-        fout << std::fixed << std::setprecision(3);
-        fout << "Total HPWL: " << total_hpwl << "\n";
+        fout << "\n[Initial Placement Evaluation]\n" << std::fixed << std::setprecision(3) << "Total HPWL: " << total_hpwl << "\n";
+        fout.close();
+
+        const std::string grid_summary_path = "result/bin_grid_summary.txt";
+        std::ofstream gout(grid_summary_path);
+        if (!gout) LOG_FATAL("cannot open BinGrid summary output: " << grid_summary_path);
+        gout << binGridSummary(grid) << '\n';
+        LOG_INFO("summary output path: " << grid_summary_path);
 
         db.printSummary(std::cout);
-        std::cout << "========== Initial Placement Evaluation ==========\n";
-        std::cout << std::fixed << std::setprecision(3);
-        std::cout << "Total HPWL: " << total_hpwl << "\n";
-        std::cout << "==================================================\n";
+        std::cout << "========== Initial Placement Evaluation ==========" << '\n'
+                  << std::fixed << std::setprecision(3) << "Total HPWL: " << total_hpwl << '\n'
+                  << "==================================================" << '\n'
+                  << binGridSummary(grid) << '\n';
+        LOG_INFO("program completed successfully");
+        Logger::instance().flush();
+        return EXIT_SUCCESS;
+    } catch (const FatalLogError&) {
+        if (logger_ready) Logger::instance().flush();
+        return EXIT_FAILURE;
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << '\n'; return 2;
+        if (logger_ready) { LOG_ERROR("Unhandled exception: " << e.what()); Logger::instance().flush(); }
+        else { std::cerr << "Error before logger initialization: " << e.what() << '\n'; printUsage(argv[0]); }
+        return EXIT_FAILURE;
+    } catch (...) {
+        if (logger_ready) { LOG_ERROR("Unhandled unknown exception"); Logger::instance().flush(); }
+        else std::cerr << "Unknown error before logger initialization\n";
+        return EXIT_FAILURE;
     }
-    return 0;
 }
