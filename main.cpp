@@ -1,5 +1,6 @@
 #include "db/PlacementDB.h"
 #include "evaluator/HPWLEvaluator.h"
+#include "evaluator/DensityEvaluator.h"
 #include "grid/BinGrid.h"
 #include "parser/LimboBookshelfAdapter.h"
 #include "utils/Logger.h"
@@ -61,6 +62,41 @@ std::string binGridSummary(const BinGrid& grid) {
        << "=====================================";
     return os.str();
 }
+std::string densitySummary(const DensityMetrics& metrics) {
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(6)
+       << "========== Density Evaluation ==========" << '\n'
+       << "Density penalty        : " << metrics.penalty << '\n'
+       << "Total overflow         : " << metrics.total_overflow << '\n'
+       << "Overflow ratio         : " << metrics.overflow_ratio << '\n'
+       << "Overflow bins          : " << metrics.overflow_bin_count << '\n'
+       << "Movable area           : " << metrics.total_movable_area << '\n'
+       << "Fixed area             : " << metrics.total_fixed_area << '\n'
+       << "Movable capacity       : " << metrics.total_movable_capacity << '\n'
+       << "Maximum utilization    : " << metrics.max_utilization << '\n'
+       << "Average utilization    : " << metrics.average_utilization << '\n'
+       << "Zero-capacity bins     : " << metrics.zero_capacity_bin_count << '\n'
+       << "Occupied zero-cap bins : " << metrics.zero_capacity_occupied_bin_count << '\n'
+       << "========================================";
+    return os.str();
+}
+
+void writeDensitySummary(std::ostream& os, const DensityMetrics& metrics) {
+    os << std::fixed << std::setprecision(6)
+       << "\n[Density Evaluation]\n"
+       << "Density penalty: " << metrics.penalty << '\n'
+       << "Total overflow: " << metrics.total_overflow << '\n'
+       << "Overflow ratio: " << metrics.overflow_ratio << '\n'
+       << "Overflow bins: " << metrics.overflow_bin_count << '\n'
+       << "Total movable area: " << metrics.total_movable_area << '\n'
+       << "Total fixed area: " << metrics.total_fixed_area << '\n'
+       << "Total movable capacity: " << metrics.total_movable_capacity << '\n'
+       << "Maximum utilization: " << metrics.max_utilization << '\n'
+       << "Average utilization: " << metrics.average_utilization << '\n'
+       << "Zero-capacity bins: " << metrics.zero_capacity_bin_count << '\n'
+       << "Zero-capacity occupied bins: " << metrics.zero_capacity_occupied_bin_count << '\n';
+}
+
 }
 
 int main(int argc, char** argv) {
@@ -75,7 +111,9 @@ int main(int argc, char** argv) {
         LOG_INFO("benchmark path: " << opt.aux_path);
         if (opt.bins_x <= 0 || opt.bins_y <= 0 || opt.target_density <= 0.0 || opt.target_density > 1.0) {
             printUsage(argv[0]);
-            LOG_FATAL("illegal BinGrid arguments: bins=" << opt.bins_x << "x" << opt.bins_y << ", target_density=" << opt.target_density);
+            throw std::invalid_argument("illegal BinGrid arguments: bins=" +
+                                        std::to_string(opt.bins_x) + "x" + std::to_string(opt.bins_y) +
+                                        ", target_density=" + std::to_string(opt.target_density));
         }
 
         PlacementDB db;
@@ -103,25 +141,43 @@ int main(int argc, char** argv) {
         LOG_INFO("bin count: " << grid.numBins() << ", bin size=" << grid.binWidth() << "x" << grid.binHeight() << ", target density=" << grid.targetDensity());
         LOG_INFO("BinGrid totals: movable_area=" << grid.totalMovableArea() << ", fixed_area=" << grid.totalFixedArea() << ", total_overflow=" << grid.totalOverflow() << ", overflow_bins=" << grid.overflowBinCount() << ", max_utilization=" << grid.maxUtilization());
 
+        LOG_INFO("Density evaluation started");
+        DensityEvaluator density_evaluator;
+        const DensityMetrics density_metrics = density_evaluator.evaluate(grid);
+        LOG_INFO("Density evaluation completed");
+        LOG_INFO("Density evaluation summary: penalty=" << density_metrics.penalty
+                 << ", total_overflow=" << density_metrics.total_overflow
+                 << ", overflow_ratio=" << density_metrics.overflow_ratio
+                 << ", overflow_bins=" << density_metrics.overflow_bin_count
+                 << ", total_movable_area=" << density_metrics.total_movable_area
+                 << ", total_fixed_area=" << density_metrics.total_fixed_area
+                 << ", total_movable_capacity=" << density_metrics.total_movable_capacity
+                 << ", max_utilization=" << density_metrics.max_utilization
+                 << ", average_utilization=" << density_metrics.average_utilization
+                 << ", zero_capacity_bins=" << density_metrics.zero_capacity_bin_count
+                 << ", zero_capacity_occupied_bins=" << density_metrics.zero_capacity_occupied_bin_count);
+
         std::filesystem::create_directories("result");
         const std::string placement_summary = "result/placementdb_summary.txt";
         std::ofstream fout(placement_summary);
         if (!fout) LOG_FATAL("cannot open summary output: " << placement_summary);
         db.printSummary(fout);
         fout << "\n[Initial Placement Evaluation]\n" << std::fixed << std::setprecision(3) << "Total HPWL: " << total_hpwl << "\n";
+        writeDensitySummary(fout, density_metrics);
         fout.close();
 
         const std::string grid_summary_path = "result/bin_grid_summary.txt";
         std::ofstream gout(grid_summary_path);
         if (!gout) LOG_FATAL("cannot open BinGrid summary output: " << grid_summary_path);
-        gout << binGridSummary(grid) << '\n';
+        gout << binGridSummary(grid) << '\n' << densitySummary(density_metrics) << '\n';
         LOG_INFO("summary output path: " << grid_summary_path);
 
         db.printSummary(std::cout);
         std::cout << "========== Initial Placement Evaluation ==========" << '\n'
                   << std::fixed << std::setprecision(3) << "Total HPWL: " << total_hpwl << '\n'
                   << "==================================================" << '\n'
-                  << binGridSummary(grid) << '\n';
+                  << binGridSummary(grid) << '\n'
+                  << densitySummary(density_metrics) << '\n';
         LOG_INFO("program completed successfully");
         Logger::instance().flush();
         return EXIT_SUCCESS;
