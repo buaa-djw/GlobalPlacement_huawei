@@ -71,6 +71,7 @@ endif()
 add_library(placement_db STATIC
     src/db/PlacementDB.cpp
     src/evaluator/HPWLEvaluator.cpp
+    src/evaluator/DensityEvaluator.cpp
     src/parser/LimboBookshelfAdapter.cpp
     src/grid/BinGrid.cpp
     src/utils/Logger.cpp
@@ -140,4 +141,10 @@ if(BUILD_TESTING)
     )
     target_link_libraries(test_logger PRIVATE placement_db)
     add_test(NAME logger_unit COMMAND test_logger)
+
+    add_executable(test_density_evaluator
+        tests/test_density_evaluator.cpp
+    )
+    target_link_libraries(test_density_evaluator PRIVATE placement_db)
+    add_test(NAME density_evaluator_unit COMMAND test_density_evaluator)
 endif()
