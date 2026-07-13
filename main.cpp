@@ -7,6 +7,8 @@
 #include <string>
 #include <iomanip>
 
+
+
 namespace {
 void printUsage(const char* argv0) {
     std::cerr << "Usage:\n  " << argv0 << " --aux <path_to_bookshelf_aux>\n";
@@ -27,9 +29,15 @@ int main(int argc, char** argv) {
         LimboBookshelfAdapter adapter(db);
         if (!adapter.read(aux_path)) { std::cerr << "Failed to read Bookshelf design: " << aux_path << '\n'; return 2; }
         HPWLEvaluator hpwl_evaluator;
-        const double total_hpwl = hpwl_evaluator.totalHPWL(db);
+        double total_hpwl = 0;
+        for(std::size_t i = 0; i < db.nets().size(); i++){
+            const int net_id = static_cast<int>(i);
+            const double net_hpwl = hpwl_evaluator.netHPWL(db, net_id);
+            db.addNetHPWL(net_id, net_hpwl);
+            total_hpwl += net_hpwl;
+        }
 
-        std::ofstream fout("placementdb_summary.txt");
+        std::ofstream fout("../result/placementdb_summary.txt");
         db.printSummary(fout);
         fout << "\n[Initial Placement Evaluation]\n";
         fout << std::fixed << std::setprecision(3);

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <cmath>
 
 int PlacementDB::addCell(const std::string& name, double width, double height, bool is_terminal) {
     if (name.empty()) throw std::invalid_argument("PlacementDB::addCell: empty cell name");
@@ -19,9 +20,15 @@ int PlacementDB::addNet(const std::string& name) {
     if (name.empty()) throw std::invalid_argument("PlacementDB::addNet: empty net name");
     if (hasNet(name)) throw std::runtime_error("PlacementDB::addNet: duplicate net '" + name + "'");
     const int id = static_cast<int>(nets_.size());
-    nets_.push_back(Net{id, name, {}});
+    nets_.push_back(Net{id, 0.0 ,name, {}});
     net_name_to_id_[name] = id;
     return id;
+}
+
+void PlacementDB::addNetHPWL(int id, double hpwl) {
+    checkId(id, static_cast<int>(nets_.size()), "net");
+    if(hpwl < 0.0) throw std::invalid_argument("PlacementDB::addNetHPWL: negative HPWL value");
+    nets_[id].hpwl = hpwl;
 }
 
 int PlacementDB::addPin(int cell_id, int net_id, double offset_x, double offset_y, const std::string& direction) {
@@ -206,7 +213,7 @@ void PlacementDB::printSummary(std::ostream& os) const {
        << " / " << nets_.size() << " nets\n\n";
 
     os << "Format:\n";
-    os << "  net_id | name | degree | pin_ids\n\n";
+    os << "  net_id | name | degree | HPWL |pin_ids  \n\n";
 
     for (size_t i = 0; i < std::min(kMaxDump, nets_.size()); ++i) {
         const Net& n = nets_[i];
@@ -214,6 +221,7 @@ void PlacementDB::printSummary(std::ostream& os) const {
         os << "Net[" << n.id << "]"
            << " | name=" << n.name
            << " | degree=" << n.pin_ids.size()
+           << " | HPWL=" << n.hpwl
            << " | pin_ids=[";
 
         for (size_t j = 0; j < n.pin_ids.size(); ++j) {

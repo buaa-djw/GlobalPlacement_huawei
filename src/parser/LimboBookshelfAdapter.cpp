@@ -21,7 +21,9 @@ public:
     void resize_bookshelf_pin(int) override {}
     void resize_bookshelf_row(int) override {}
     void add_bookshelf_terminal(std::string& name, int w, int h) override { db_.addCell(name, w, h, true); }
-    void add_bookshelf_node(std::string& name, int w, int h) override { db_.addCell(name, w, h, false); }
+    void add_bookshelf_node(std::string& name, int w, int h, bool is_terminal) override {
+    db_.addCell(name, static_cast<double>(w), static_cast<double>(h), is_terminal);
+}
     void add_bookshelf_net(BookshelfParser::Net const& net) override {
         const int net_id = db_.addNet(net.net_name);
         for (const auto& p : net.vNetPin) {

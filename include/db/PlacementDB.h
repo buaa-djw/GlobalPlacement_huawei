@@ -15,6 +15,7 @@ class PlacementDB {
 public:
     int addCell(const std::string& name, double width, double height, bool is_terminal);
     int addNet(const std::string& name);
+    void addNetHPWL(int id, double hpwl);
     int addPin(int cell_id, int net_id, double offset_x, double offset_y, const std::string& direction);
     int addRow(const Row& row);
 
