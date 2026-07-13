@@ -10,6 +10,7 @@ set(LIMBO_ROOT "${DEFAULT_LIMBO_ROOT}" CACHE PATH "Path to Limbo source/include 
 
 add_library(placement_db
     src/db/PlacementDB.cpp
+    src/evaluator/HPWLEvaluator.cpp
     src/parser/LimboBookshelfAdapter.cpp
 )
 target_include_directories(placement_db PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -62,4 +63,8 @@ if(BUILD_TESTING)
     add_executable(test_placement_db tests/test_placement_db.cpp)
     target_link_libraries(test_placement_db PRIVATE placement_db)
     add_test(NAME placement_db_unit COMMAND test_placement_db)
+
+    add_executable(test_hpwl tests/test_hpwl.cpp)
+    target_link_libraries(test_hpwl PRIVATE placement_db)
+    add_test(NAME hpwl_unit COMMAND test_hpwl)
 endif()

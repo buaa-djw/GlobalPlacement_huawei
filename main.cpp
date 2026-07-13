@@ -1,12 +1,11 @@
 #include "db/PlacementDB.h"
+#include "evaluator/HPWLEvaluator.h"
 #include "parser/LimboBookshelfAdapter.h"
 
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <algorithm>
 #include <iomanip>
-#include <limits>
 
 namespace {
 void printUsage(const char* argv0) {
@@ -27,9 +26,20 @@ int main(int argc, char** argv) {
         PlacementDB db;
         LimboBookshelfAdapter adapter(db);
         if (!adapter.read(aux_path)) { std::cerr << "Failed to read Bookshelf design: " << aux_path << '\n'; return 2; }
+        HPWLEvaluator hpwl_evaluator;
+        const double total_hpwl = hpwl_evaluator.totalHPWL(db);
+
         std::ofstream fout("placementdb_summary.txt");
-        db.printSummary(fout);   
+        db.printSummary(fout);
+        fout << "\n[Initial Placement Evaluation]\n";
+        fout << std::fixed << std::setprecision(3);
+        fout << "Total HPWL: " << total_hpwl << "\n";
+
         db.printSummary(std::cout);
+        std::cout << "========== Initial Placement Evaluation ==========\n";
+        std::cout << std::fixed << std::setprecision(3);
+        std::cout << "Total HPWL: " << total_hpwl << "\n";
+        std::cout << "==================================================\n";
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << '\n'; return 2;
     }

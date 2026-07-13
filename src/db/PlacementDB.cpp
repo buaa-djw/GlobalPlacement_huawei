@@ -64,6 +64,19 @@ const Net& PlacementDB::net(int id) const { checkId(id, static_cast<int>(nets_.s
 Pin& PlacementDB::pin(int id) { checkId(id, static_cast<int>(pins_.size()), "pin"); return pins_[id]; }
 const Pin& PlacementDB::pin(int id) const { checkId(id, static_cast<int>(pins_.size()), "pin"); return pins_[id]; }
 
+Point PlacementDB::pinPosition(int pin_id) const {
+    checkId(pin_id, static_cast<int>(pins_.size()), "pin");
+    const Pin& p = pins_[pin_id];
+    checkId(p.cell_id, static_cast<int>(cells_.size()), "pin cell");
+    const Cell& c = cells_[p.cell_id];
+
+    // Bookshelf pin offsets are interpreted relative to the cell center.
+    // Orientation is not fully represented in the current database yet, so all
+    // cells are evaluated with N-orientation semantics in this stage.
+    return Point{c.x + 0.5 * c.width + p.offset_x,
+                 c.y + 0.5 * c.height + p.offset_y};
+}
+
 void PlacementDB::setCellLocation(const std::string& name, double x, double y, bool fixed) {
     if (!hasCell(name)) {
         std::cerr << "Warning: .pl references unknown cell '" << name << "'\n";
@@ -235,10 +248,11 @@ void PlacementDB::printSummary(std::ostream& os) const {
 
         if (p.cell_id >= 0 && static_cast<size_t>(p.cell_id) < cells_.size()) {
             const Cell& c = cells_[static_cast<size_t>(p.cell_id)];
+            const Point pos = pinPosition(p.id);
             os << " | cell_x=" << c.x
                << " | cell_y=" << c.y
-               << " | estimated_pin_x=" << c.x + p.offset_x
-               << " | estimated_pin_y=" << c.y + p.offset_y;
+               << " | estimated_pin_x=" << pos.x
+               << " | estimated_pin_y=" << pos.y;
         }
 
         os << "\n";
