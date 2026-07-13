@@ -4,6 +4,7 @@
 #include "db/Net.h"
 #include "db/Pin.h"
 #include "db/Row.h"
+#include "geometry/Point.h"
 
 #include <iosfwd>
 #include <string>
@@ -29,6 +30,8 @@ public:
     const Net& net(int id) const;
     Pin& pin(int id);
     const Pin& pin(int id) const;
+
+    Point pinPosition(int pin_id) const;
 
     const std::vector<Cell>& cells() const { return cells_; }
     const std::vector<Net>& nets() const { return nets_; }
