@@ -26,6 +26,9 @@ struct Cell {
 // Fixed is a placement property, not a node-type property.
     bool is_fixed = false;
 
+// Bookshelf placement orientation, such as N, S, E, W, FN, FS.
+    std::string orientation = "N";
+
     std::vector<int> pin_ids;
 
     bool isTerminal() const {

@@ -45,9 +45,9 @@ public:
         const std::string& orientation,
         const std::string& status,
         bool pl_flag
-        ) override {const bool fixed = status.find("FIXED") != std::string::npos;db_.setCellLocation(name,x,y,fixed);}
-
-
+        ) override {
+            const bool fixed = status.find("FIXED") != std::string::npos;
+            db_.setCellLocation(name , x , y , fixed , orientation);}
 
     void set_bookshelf_design(std::string&) override {}
     void bookshelf_end() override {}
@@ -96,7 +96,7 @@ void parseNodes(PlacementDB& db, const std::filesystem::path& path) {
                         type = CellType::Terminal;
                     }
                 }
-                
+
                 db.addCell(
                     t[0],
                     std::stod(t[1]),
@@ -107,15 +107,59 @@ void parseNodes(PlacementDB& db, const std::filesystem::path& path) {
         }
     }
 }
-void parsePl(PlacementDB& db, const std::filesystem::path& path) {
-    std::ifstream in(path); if (!in) throw std::runtime_error("Cannot open pl file: " + path.string());
+void parsePl(
+    PlacementDB& db,
+    const std::filesystem::path& path
+) {
+    std::ifstream input(path);
+
+    if (!input) {
+        throw std::runtime_error(
+            "Cannot open pl file: " +
+            path.string()
+        );
+    }
+
     std::string line;
-    while (std::getline(in, line)) {
-        auto t = split(stripComment(line));
-        if (t.size() >= 3 && t[0] != "UCLA") {
-            bool fixed = line.find("/FIXED") != std::string::npos || line.find("/FIXED_NI") != std::string::npos;
-            db.setCellLocation(t[0], std::stod(t[1]), std::stod(t[2]), fixed);
+
+    while (std::getline(input, line)) {
+        const std::string content =
+            stripComment(line);
+
+        const auto tokens = split(content);
+
+        if (tokens.size() < 3 ||
+            tokens[0] == "UCLA") {
+            continue;
         }
+
+        const double x = std::stod(tokens[1]);
+        const double y = std::stod(tokens[2]);
+
+        bool fixed = false;
+        std::string orientation = "N";
+
+        for (std::size_t i = 3;
+             i < tokens.size();
+             ++i) {
+            if (tokens[i] == ":" &&
+                i + 1 < tokens.size()) {
+                orientation = tokens[i + 1];
+            }
+
+            if (tokens[i].find("FIXED") !=
+                std::string::npos) {
+                fixed = true;
+            }
+        }
+
+        db.setCellLocation(
+            tokens[0],
+            x,
+            y,
+            fixed,
+            orientation
+        );
     }
 }
 void parseNets(PlacementDB& db, const std::filesystem::path& path) {

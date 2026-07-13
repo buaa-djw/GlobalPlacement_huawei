@@ -60,7 +60,7 @@ public:
     const std::vector<Pin>& pins() const { return pins_; }
     const std::vector<Row>& rows() const { return rows_; }
 
-    void setCellLocation(const std::string& name, double x, double y, bool fixed);
+    void setCellLocation(const std::string& name, double x, double y, bool fixed, const std::string& orientation = "N");
     void printSummary(std::ostream& os) const;
 
 private:
