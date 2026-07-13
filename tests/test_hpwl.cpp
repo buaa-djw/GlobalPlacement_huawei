@@ -15,10 +15,18 @@ void expectNear(double actual, double expected) {
     assert(near(actual, expected));
 }
 
-int addPlacedCell(PlacementDB& db, const std::string& name, double width, double height,
-                  double x, double y, bool terminal = false) {
-    const int cell_id = db.addCell(name, width, height, terminal);
-    db.setCellLocation(name, x, y, terminal);
+int addPlacedCell(
+    PlacementDB& db,
+    const std::string& name,
+    double width,
+    double height,
+    double x,
+    double y,
+    CellType type = CellType::Standard,
+    bool fixed = false
+) {
+    const int cell_id = db.addCell(name, width, height, type);
+    db.setCellLocation(name, x, y, fixed);
     return cell_id;
 }
 }
@@ -90,8 +98,8 @@ int main() {
 
     {
         PlacementDB db;
-        const int movable = addPlacedCell(db, "movable", 10.0, 10.0, 0.0, 0.0, false);
-        const int fixed = addPlacedCell(db, "fixed", 10.0, 10.0, 100.0, 50.0, true);
+        const int movable = addPlacedCell(db, "movable", 10.0, 10.0, 0.0, 0.0);
+        const int fixed = addPlacedCell(db, "fixed", 10.0, 10.0, 100.0, 50.0, CellType::Standard, true);
         const int net = db.addNet("fixed_net");
         db.addPin(movable, net, 0.0, 0.0, "I");
         db.addPin(fixed, net, 0.0, 0.0, "O");

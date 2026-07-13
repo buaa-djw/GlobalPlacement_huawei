@@ -5,8 +5,8 @@
 
 int main() {
     PlacementDB db;
-    int c0 = db.addCell("a", 10, 20, false);
-    int c1 = db.addCell("b", 5, 5, true);
+    int c0 = db.addCell("a", 10, 20, CellType::Standard);
+    int c1 = db.addCell("b", 5, 5, CellType::Terminal);
     int n0 = db.addNet("n");
     int p0 = db.addPin(c0, n0, 1.5, -2.0, "I");
     db.addPin(c1, n0, 0.0, 0.0, "O");

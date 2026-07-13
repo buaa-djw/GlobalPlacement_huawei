@@ -116,12 +116,21 @@ int main(int argc, char** argv) {
                                         ", target_density=" + std::to_string(opt.target_density));
         }
 
+        //读取文件
         PlacementDB db;
         LimboBookshelfAdapter adapter(db);
         LOG_INFO("Bookshelf parsing started");
         if (!adapter.read(opt.aux_path)) LOG_FATAL("Failed to read Bookshelf design: " << opt.aux_path);
         LOG_INFO("Bookshelf parsing completed");
         LOG_INFO("cell/net/pin/row counts: cells=" << db.cells().size() << ", nets=" << db.nets().size() << ", pins=" << db.pins().size() << ", rows=" << db.rows().size());
+
+        //初始化布局
+        LOG_INFO("Generating deterministic initial placement");
+        db.initializeSimplePlacement();
+        LOG_INFO(
+            "Deterministic initial placement completed"
+        );
+
 
         LOG_INFO("HPWL evaluation started");
         HPWLEvaluator hpwl_evaluator;
@@ -158,7 +167,7 @@ int main(int argc, char** argv) {
                  << ", zero_capacity_occupied_bins=" << density_metrics.zero_capacity_occupied_bin_count);
 
         std::filesystem::create_directories("result");
-        const std::string placement_summary = "result/placementdb_summary.txt";
+        const std::string placement_summary = "../result/placementdb_summary.txt";
         std::ofstream fout(placement_summary);
         if (!fout) LOG_FATAL("cannot open summary output: " << placement_summary);
         db.printSummary(fout);
@@ -166,7 +175,7 @@ int main(int argc, char** argv) {
         writeDensitySummary(fout, density_metrics);
         fout.close();
 
-        const std::string grid_summary_path = "result/bin_grid_summary.txt";
+        const std::string grid_summary_path = "../result/bin_grid_summary.txt";
         std::ofstream gout(grid_summary_path);
         if (!gout) LOG_FATAL("cannot open BinGrid summary output: " << grid_summary_path);
         gout << binGridSummary(grid) << '\n' << densitySummary(density_metrics) << '\n';

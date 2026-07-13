@@ -7,12 +7,34 @@
 #include <stdexcept>
 #include <cmath>
 
-int PlacementDB::addCell(const std::string& name, double width, double height, bool is_terminal) {
+int PlacementDB::addCell(const std::string& name, double width, double height, CellType type) {
+
     if (name.empty()) throw std::invalid_argument("PlacementDB::addCell: empty cell name");
     if (hasCell(name)) throw std::runtime_error("PlacementDB::addCell: duplicate cell '" + name + "'");
+    if (!std::isfinite(width) ||!std::isfinite(height) ||width < 0.0 ||height < 0.0) {
+        throw std::invalid_argument("PlacementDB::addCell: invalid dimensions for cell '" +name + "'");
+    }
+
     const int id = static_cast<int>(cells_.size());
-    cells_.push_back(Cell{id, name, width, height, 0.0, 0.0, is_terminal, is_terminal, {}});
+
+    Cell cell;
+    cell.id = id;
+    cell.name = name;
+    cell.width = width;
+    cell.height = height;
+
+    // Coordinates will be initialized after all Bookshelf files are parsed.
+    cell.x = 0.0;
+    cell.y = 0.0;
+
+    cell.type = type;
+
+    // Terminal type does not automatically imply a valid fixed placement.
+    cell.is_fixed = false;
+
+    cells_.push_back(std::move(cell));
     cell_name_to_id_[name] = id;
+
     return id;
 }
 
@@ -122,11 +144,131 @@ void PlacementDB::setCellLocation(const std::string& name, double x, double y, b
         std::cerr << "Warning: .pl references unknown cell '" << name << "'\n";
         return;
     }
-    Cell& c = cells_[getCellId(name)];
-    c.x = x;
-    c.y = y;
-    c.is_fixed = fixed || c.is_terminal;
+    if (!std::isfinite(x) ||!std::isfinite(y)) {
+        throw std::invalid_argument("PlacementDB::setCellLocation: non-finite coordinate for '" + name + "'");
+    }
+
+    Cell& cell =cells_[static_cast<std::size_t>(getCellId(name))];
+    cell.x = x;
+    cell.y = y;
+    cell.is_fixed = fixed;
 }
+
+void PlacementDB::initializeSimplePlacement() {
+    if (cells_.empty()) {
+        return;
+    }
+
+    const Box core = coreBounds();
+
+    if (!core.valid()) {
+        throw std::runtime_error(
+            "PlacementDB::initializeSimplePlacement: invalid core"
+        );
+    }
+
+    std::size_t cells_to_initialize = 0;
+
+    for (const Cell& cell : cells_) {
+        if (!cell.is_fixed) {
+            ++cells_to_initialize;
+        }
+    }
+
+    if (cells_to_initialize == 0) {
+        return;
+    }
+
+    const double aspect_ratio =
+        core.width() / core.height();
+
+    const std::size_t num_columns =
+        std::max<std::size_t>(
+            1,
+            static_cast<std::size_t>(
+                std::ceil(
+                    std::sqrt(
+                        static_cast<double>(
+                            cells_to_initialize
+                        ) * aspect_ratio
+                    )
+                )
+            )
+        );
+
+    const std::size_t num_rows =
+        static_cast<std::size_t>(
+            std::ceil(
+                static_cast<double>(
+                    cells_to_initialize
+                ) /
+                static_cast<double>(num_columns)
+            )
+        );
+
+    const double step_x =
+        core.width() /
+        static_cast<double>(num_columns);
+
+    const double step_y =
+        core.height() /
+        static_cast<double>(num_rows);
+
+    std::size_t placement_index = 0;
+
+    for (Cell& cell : cells_) {
+        // Preserve real fixed positions if a benchmark provides them.
+        if (cell.is_fixed) {
+            continue;
+        }
+
+        if (cell.width > core.width() ||
+            cell.height > core.height()) {
+            throw std::runtime_error(
+                "PlacementDB::initializeSimplePlacement: "
+                "cell is larger than the core: " +
+                cell.name
+            );
+        }
+
+        const std::size_t column =
+            placement_index % num_columns;
+
+        const std::size_t row =
+            placement_index / num_columns;
+
+        const double center_x =
+            core.lx +
+            (static_cast<double>(column) + 0.5) *
+                step_x;
+
+        const double center_y =
+            core.ly +
+            (static_cast<double>(row) + 0.5) *
+                step_y;
+
+        const double maximum_x =
+            core.ux - cell.width;
+
+        const double maximum_y =
+            core.uy - cell.height;
+
+        cell.x = std::clamp(
+            center_x - 0.5 * cell.width,
+            core.lx,
+            maximum_x
+        );
+
+        cell.y = std::clamp(
+            center_y - 0.5 * cell.height,
+            core.ly,
+            maximum_y
+        );
+
+        ++placement_index;
+    }
+}
+
 
 /*
 void PlacementDB::printSummary(std::ostream& os) const {
@@ -160,7 +302,7 @@ void PlacementDB::printSummary(std::ostream& os) const {
 
     const size_t fixed_count = static_cast<size_t>(
         std::count_if(cells_.begin(), cells_.end(), [](const Cell& c) {
-            return c.is_terminal || c.is_fixed;
+            return  c.is_fixed;
         })
     );
 
@@ -234,7 +376,6 @@ void PlacementDB::printSummary(std::ostream& os) const {
            << " | height=" << c.height
            << " | x=" << c.x
            << " | y=" << c.y
-           << " | is_terminal=" << (c.is_terminal ? "true" : "false")
            << " | is_fixed=" << (c.is_fixed ? "true" : "false")
            << " | num_pins=" << c.pin_ids.size()
            << "\n";

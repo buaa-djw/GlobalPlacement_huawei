@@ -20,10 +20,12 @@ public:
     void resize_bookshelf_net(int) override {}
     void resize_bookshelf_pin(int) override {}
     void resize_bookshelf_row(int) override {}
-    void add_bookshelf_terminal(std::string& name, int w, int h) override { db_.addCell(name, w, h, true); }
-    void add_bookshelf_node(std::string& name, int w, int h, bool is_terminal) override {
-    db_.addCell(name, static_cast<double>(w), static_cast<double>(h), is_terminal);
+
+    void add_bookshelf_terminal(std::string& name, int w, int h) override { db_.addCell(name, static_cast<double>(w), static_cast<double>(h), CellType::Terminal); }
+    void add_bookshelf_terminal_NI(std::string& name,int width,int height) override {db_.addCell(name,static_cast<double>(width),static_cast<double>(height),CellType::TerminalNI);
 }
+
+    void add_bookshelf_node(std::string& name, int w, int h, bool is_cell) override {db_.addCell(name, static_cast<double>(w), static_cast<double>(h), CellType::Standard);}
     void add_bookshelf_net(BookshelfParser::Net const& net) override {
         const int net_id = db_.addNet(net.net_name);
         for (const auto& p : net.vNetPin) {
@@ -36,7 +38,17 @@ public:
         row.height = r.height; 
         row.site_width = r.site_width; row.site_spacing = r.site_spacing; row.x_start = r.origin[0]; row.num_sites = r.site_num; row.x_end = row.x_start + row.num_sites * row.site_spacing; db_.addRow(row);
     }
-    void set_bookshelf_node_position(std::string const& name, double x, double y, std::string const&, std::string const&, bool fixed) override { db_.setCellLocation(name, x, y, fixed); }
+    void set_bookshelf_node_position(
+        const std::string& name,
+        double x,
+        double y,
+        const std::string& orientation,
+        const std::string& status,
+        bool pl_flag
+        ) override {const bool fixed = status.find("FIXED") != std::string::npos;db_.setCellLocation(name,x,y,fixed);}
+
+
+
     void set_bookshelf_design(std::string&) override {}
     void bookshelf_end() override {}
 private:
@@ -74,8 +86,24 @@ void parseNodes(PlacementDB& db, const std::filesystem::path& path) {
     while (std::getline(in, line)) {
         auto t = split(stripComment(line));
         if (t.size() >= 3 && t[0] != "UCLA" && isNumberToken(t[1]) && isNumberToken(t[2])) {
-            bool terminal = t.size() >= 4 && t[3].find("terminal") != std::string::npos;
-            db.addCell(t[0], std::stod(t[1]), std::stod(t[2]), terminal);
+
+            CellType type = CellType::Standard;
+
+                if (t.size() >= 4) {
+                    if (t[3] == "terminal_NI") {
+                        type = CellType::TerminalNI;
+                    } else if (t[3] == "terminal") {
+                        type = CellType::Terminal;
+                    }
+                }
+                
+                db.addCell(
+                    t[0],
+                    std::stod(t[1]),
+                    std::stod(t[2]),
+                    type
+                );
+
         }
     }
 }

@@ -29,8 +29,17 @@ void addCoreRow(PlacementDB& db, double lx = 0.0, double ly = 0.0, double ux = 1
     db.addRow(row);
 }
 
-void addCell(PlacementDB& db, const std::string& name, double x, double y, double w, double h, bool fixed = false) {
-    db.addCell(name, w, h, fixed);
+void addCell(
+    PlacementDB& db,
+    const std::string& name,
+    double x,
+    double y,
+    double width,
+    double height,
+    CellType type = CellType::Standard,
+    bool fixed = false
+) {
+    db.addCell(name, width, height, type);
     db.setCellLocation(name, x, y, fixed);
 }
 
@@ -146,7 +155,7 @@ int main() {
     {
         PlacementDB db;
         addCoreRow(db, 0, 0, 10, 10);
-        addCell(db, "f", 0, 0, 10, 10, true);
+        addCell(db, "f", 0, 0, 10, 10, CellType::Standard, true);
         BinGrid grid(db, 1, 1, 1.0);
         const DensityMetrics m = eval(grid);
         assert(m.zero_capacity_bin_count == 1);
@@ -158,7 +167,7 @@ int main() {
     {
         PlacementDB db;
         addCoreRow(db, 0, 0, 10, 10);
-        addCell(db, "f", 0, 0, 10, 10, true);
+        addCell(db, "f", 0, 0, 10, 10, CellType::Standard, true);
         addCell(db, "m", 0, 0, 1, 10);
         BinGrid grid(db, 1, 1, 1.0);
         const DensityMetrics m = eval(grid);
@@ -171,7 +180,7 @@ int main() {
     {
         PlacementDB db;
         addCoreRow(db, 0, 0, 10, 10);
-        addCell(db, "f", 0, 0, 5, 10, true);
+        addCell(db, "f", 0, 0, 5, 10, CellType::Standard, true);
         addCell(db, "m", 0, 0, 8, 10);
         BinGrid grid(db, 1, 1, 1.0);
         const DensityMetrics m = eval(grid);
