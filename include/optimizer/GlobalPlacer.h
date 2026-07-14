@@ -14,6 +14,7 @@ struct GlobalPlacerConfig {
     int bins_y = 64;
     double target_density = 0.9;
     double density_weight = 1.0;
+    double zero_capacity_repulsion = 2.0;
     int max_iterations = 20;
     double initial_step_fraction = 0.10;
     double minimum_step_fraction = 1e-5;
@@ -31,6 +32,8 @@ struct GlobalPlacerIteration {
     int line_search_trials = 0;
     double hpwl = 0.0;
     double density_penalty = 0.0;
+    double normalized_hpwl = 0.0;
+    double normalized_density_penalty = 0.0;
     double weighted_density_penalty = 0.0;
     double total_cost = 0.0;
     double total_overflow = 0.0;
@@ -40,6 +43,10 @@ struct GlobalPlacerIteration {
     double hpwl_gradient_rms = 0.0;
     double density_direction_rms = 0.0;
     double combined_direction_rms = 0.0;
+    std::size_t active_net_count = 0;
+    std::size_t active_overflow_bin_count = 0;
+    std::size_t zero_capacity_overflow_bin_count = 0;
+    double maximum_direction_norm = 0.0;
     double relative_improvement = 0.0;
 };
 
@@ -74,6 +81,4 @@ public:
 
 private:
     GlobalPlacerConfig config_;
-    void computeHpwlSubgradient(const PlacementDB& db, std::vector<double>& gx, std::vector<double>& gy) const;
-    void computeDensityDirection(const PlacementDB& db, const BinGrid& grid, std::vector<double>& dx, std::vector<double>& dy) const;
 };

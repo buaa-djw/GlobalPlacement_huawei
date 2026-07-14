@@ -1,26 +1,21 @@
 #include "optimizer/GlobalPlacer.h"
 
+#include "optimizer/SubgradientEvaluator.h"
+
 #include "db/Cell.h"
-#include "db/Net.h"
-#include "db/Pin.h"
 #include "db/PlacementDB.h"
 #include "geometry/Box.h"
-#include "geometry/Point.h"
 #include "grid/BinGrid.h"
 #include "utils/Logger.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
-#include <limits>
 #include <stdexcept>
 #include <string>
-#include <unordered_set>
 
 namespace
 {
     constexpr double kEps = 1e-12;
-    constexpr double kSqrtHalf = 0.7071067811865475244;
 
     void validateConfig(const GlobalPlacerConfig &c)
     {
@@ -30,6 +25,8 @@ namespace
             throw std::invalid_argument("GlobalPlacer: invalid target_density");
         if (!std::isfinite(c.density_weight) || c.density_weight < 0.0)
             throw std::invalid_argument("GlobalPlacer: invalid density_weight");
+        if (!std::isfinite(c.zero_capacity_repulsion) || c.zero_capacity_repulsion < 1.0)
+            throw std::invalid_argument("GlobalPlacer: invalid zero_capacity_repulsion");
         if (c.max_iterations < 0)
             throw std::invalid_argument("GlobalPlacer: max_iterations must be non-negative");
         if (!std::isfinite(c.initial_step_fraction) || c.initial_step_fraction <= 0.0)
@@ -65,34 +62,6 @@ namespace
         }
     }
 
-    double movableRms(const PlacementDB &db, const std::vector<double> &x, const std::vector<double> &y)
-    {
-        double sum = 0.0;
-        std::size_t n = 0;
-        for (const Cell &c : db.cells())
-            if (c.isMovable())
-            {
-                sum += x[c.id] * x[c.id] + y[c.id] * y[c.id];
-                ++n;
-            }
-        return n ? std::sqrt(sum / static_cast<double>(n)) : 0.0;
-    }
-
-    bool isExtreme(double v, double e) { return std::abs(v - e) <= 1e-9 * std::max(1.0, std::abs(e)); }
-
-    void addUnique(std::vector<int> &v, int id)
-    {
-        if (std::find(v.begin(), v.end(), id) == v.end())
-            v.push_back(id);
-    }
-
-    std::pair<double, double> tieDirection(int cell_id, int bin_id)
-    {
-        static const std::array<std::pair<double, double>, 8> dirs{{{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {kSqrtHalf, kSqrtHalf}, {kSqrtHalf, -kSqrtHalf}, {-kSqrtHalf, kSqrtHalf}, {-kSqrtHalf, -kSqrtHalf}}};
-        const unsigned h = static_cast<unsigned>(cell_id) * 2654435761u ^ static_cast<unsigned>(bin_id) * 2246822519u;
-        return dirs[h & 7u];
-    }
-
     void projectMovables(PlacementDB &db, const Box &core)
     {
         for (Cell &c : const_cast<std::vector<Cell> &>(db.cells()))
@@ -117,93 +86,17 @@ namespace
 
 GlobalPlacer::GlobalPlacer(GlobalPlacerConfig config) : config_(config) { validateConfig(config_); }
 
-void GlobalPlacer::computeHpwlSubgradient(const PlacementDB &db, std::vector<double> &gx, std::vector<double> &gy) const
-{
-    gx.assign(db.cells().size(), 0.0);
-    gy.assign(db.cells().size(), 0.0);
-    for (const Net &net : db.nets())
-    {
-        if (net.pin_ids.size() <= 1)
-            continue;
-        double minx = std::numeric_limits<double>::infinity(), maxx = -minx, miny = minx, maxy = -minx;
-        for (int pid : net.pin_ids)
-        {
-            Point p = db.pinPosition(pid);
-            minx = std::min(minx, p.x);
-            maxx = std::max(maxx, p.x);
-            miny = std::min(miny, p.y);
-            maxy = std::max(maxy, p.y);
-        }
-        std::vector<int> minxs, maxxs, minys, maxys;
-        for (int pid : net.pin_ids)
-        {
-            Point p = db.pinPosition(pid);
-            const Cell &c = db.cell(db.pin(pid).cell_id);
-            if (!c.isMovable())
-                continue;
-            if (isExtreme(p.x, minx))
-                addUnique(minxs, c.id);
-            if (isExtreme(p.x, maxx))
-                addUnique(maxxs, c.id);
-            if (isExtreme(p.y, miny))
-                addUnique(minys, c.id);
-            if (isExtreme(p.y, maxy))
-                addUnique(maxys, c.id);
-        }
-        for (int id : minxs)
-            gx[id] -= 1.0 / static_cast<double>(minxs.size());
-        for (int id : maxxs)
-            gx[id] += 1.0 / static_cast<double>(maxxs.size());
-        for (int id : minys)
-            gy[id] -= 1.0 / static_cast<double>(minys.size());
-        for (int id : maxys)
-            gy[id] += 1.0 / static_cast<double>(maxys.size());
-    }
-}
-
-void GlobalPlacer::computeDensityDirection(const PlacementDB &db, const BinGrid &grid, std::vector<double> &dx, std::vector<double> &dy) const
-{
-    dx.assign(db.cells().size(), 0.0);
-    dy.assign(db.cells().size(), 0.0);
-    // Surrogate direction: pushes movable cells out of overflowing bins. This is
-    // not the analytic gradient of sum(overflow^2); line search validates it.
-    // It avoids utilization and 1/capacity because zero-capacity bins can occur.
-    for (const Bin &b : grid.bins())
-        if (b.overflow > 0.0)
-        {
-            const double bc_x = 0.5 * (b.bounds.lx + b.bounds.ux), bc_y = 0.5 * (b.bounds.ly + b.bounds.uy);
-            for (int cid : b.cell_ids)
-            {
-                const Cell &c = db.cell(cid);
-                if (!c.isMovable())
-                    continue;
-                const Box cb{c.x, c.y, c.x + c.width, c.y + c.height};
-                const double ov = rectangleOverlapArea(cb, b.bounds);
-                if (ov <= 0.0)
-                    continue;
-                double vx = 0.5 * (cb.lx + cb.ux) - bc_x, vy = 0.5 * (cb.ly + cb.uy) - bc_y;
-                double norm = std::sqrt(vx * vx + vy * vy);
-                if (norm <= kEps)
-                {
-                    auto d = tieDirection(cid, b.id);
-                    vx = d.first;
-                    vy = d.second;
-                    norm = 1.0;
-                }
-                const double mag = (b.overflow / std::max(b.bounds.area(), kEps)) * (ov / std::max(c.width * c.height, kEps));
-                dx[cid] += mag * vx / norm;
-                dy[cid] += mag * vy / norm;
-            }
-        }
-}
-
 GlobalPlacerResult GlobalPlacer::optimize(PlacementDB &db) const
 {
     const std::size_t movable_count = std::count_if(db.cells().begin(), db.cells().end(), [](const Cell &c)
                                                     { return c.isMovable(); });
-    LOG_INFO("Global placement started: movable_cells=" << movable_count << " bins=" << config_.bins_x << "x" << config_.bins_y << " target_density=" << config_.target_density << " density_weight=" << config_.density_weight << " max_iterations=" << config_.max_iterations);
+    LOG_INFO("Global placement started: movable_cells=" << movable_count << " bins=" << config_.bins_x << "x" << config_.bins_y << " target_density=" << config_.target_density << " density_weight=" << config_.density_weight << " zero_capacity_repulsion=" << config_.zero_capacity_repulsion << " max_iterations=" << config_.max_iterations);
     BinGrid grid(db, config_.bins_x, config_.bins_y, config_.target_density);
     ObjectiveEvaluator eval;
+    SubgradientConfig subgradient_config;
+    subgradient_config.density_weight = config_.density_weight;
+    subgradient_config.zero_capacity_repulsion = config_.zero_capacity_repulsion;
+    SubgradientEvaluator subgradient_evaluator(subgradient_config);
     GlobalPlacerResult r;
     const auto fixed_initial = savePositions(db);
     r.initial_metrics = eval.evaluate(db, grid, config_.density_weight);
@@ -225,51 +118,25 @@ GlobalPlacerResult GlobalPlacer::optimize(PlacementDB &db) const
         r.attempted_iterations = it;
         const auto start_pos = savePositions(db);
         const ObjectiveMetrics start = current;
-        std::vector<double> gx, gy, wx, wy, dx, dy, cx(db.cells().size(), 0.0), cy(db.cells().size(), 0.0);
-        computeHpwlSubgradient(db, gx, gy);
-        computeDensityDirection(db, grid, dx, dy);
-        wx = gx;
-        wy = gy;
-        for (std::size_t i = 0; i < wx.size(); ++i)
-        {
-            wx[i] = -wx[i];
-            wy[i] = -wy[i];
-        }
-        const double wr = movableRms(db, wx, wy), dr = movableRms(db, dx, dy);
-        for (const Cell &c : db.cells())
-            if (c.isMovable())
-            {
-                if (wr > kEps)
-                {
-                    cx[c.id] += wx[c.id] / wr;
-                    cy[c.id] += wy[c.id] / wr;
-                }
-                if (dr > kEps)
-                {
-                    cx[c.id] += config_.density_weight * dx[c.id] / dr;
-                    cy[c.id] += config_.density_weight * dy[c.id] / dr;
-                }
-            }
-        double cr = movableRms(db, cx, cy);
-        if (cr <= kEps)
+        const SubgradientResult gradient = subgradient_evaluator.evaluate(db, grid);
+        if (gradient.metrics.combined_direction_rms <= kEps)
         {
             r.converged = true;
             r.termination_reason = "zero search direction";
             break;
         }
-        for (const Cell &c : db.cells())
-            if (c.isMovable())
-            {
-                cx[c.id] /= cr;
-                cy[c.id] /= cr;
-            }
-        cr = movableRms(db, cx, cy);
+        const std::vector<double>& cx = gradient.combined_direction_x;
+        const std::vector<double>& cy = gradient.combined_direction_y;
         GlobalPlacerIteration rec;
         rec.iteration = it;
         rec.step_fraction = step_fraction;
-        rec.hpwl_gradient_rms = wr;
-        rec.density_direction_rms = dr;
-        rec.combined_direction_rms = cr;
+        rec.hpwl_gradient_rms = gradient.metrics.hpwl_subgradient_rms;
+        rec.density_direction_rms = gradient.metrics.density_direction_rms;
+        rec.combined_direction_rms = gradient.metrics.combined_direction_rms;
+        rec.active_net_count = gradient.metrics.active_net_count;
+        rec.active_overflow_bin_count = gradient.metrics.active_overflow_bin_count;
+        rec.zero_capacity_overflow_bin_count = gradient.metrics.zero_capacity_overflow_bin_count;
+        rec.maximum_direction_norm = gradient.metrics.maximum_direction_norm;
         double trial_frac = step_fraction;
         for (int tr = 1; tr <= config_.max_line_search_trials; ++tr)
         {
@@ -294,6 +161,8 @@ GlobalPlacerResult GlobalPlacer::optimize(PlacementDB &db) const
                 rec.accepted_step = step;
                 rec.hpwl = tm.hpwl;
                 rec.density_penalty = tm.density_penalty;
+                rec.normalized_hpwl = tm.normalized_hpwl;
+                rec.normalized_density_penalty = tm.normalized_density_penalty;
                 rec.weighted_density_penalty = tm.weighted_density_penalty;
                 rec.total_cost = tm.total_cost;
                 rec.total_overflow = tm.total_overflow;
@@ -317,6 +186,8 @@ GlobalPlacerResult GlobalPlacer::optimize(PlacementDB &db) const
             current = eval.evaluate(db, grid, config_.density_weight);
             rec.hpwl = current.hpwl;
             rec.density_penalty = current.density_penalty;
+            rec.normalized_hpwl = current.normalized_hpwl;
+            rec.normalized_density_penalty = current.normalized_density_penalty;
             rec.weighted_density_penalty = current.weighted_density_penalty;
             rec.total_cost = current.total_cost;
             rec.total_overflow = current.total_overflow;
@@ -326,7 +197,7 @@ GlobalPlacerResult GlobalPlacer::optimize(PlacementDB &db) const
         }
         r.history.push_back(rec);
         if (it % config_.report_interval == 0)
-            LOG_INFO("[GlobalPlacer] iter=" << it << " accepted=" << rec.accepted << " hpwl=" << rec.hpwl << " density=" << rec.density_penalty << " weighted_density=" << rec.weighted_density_penalty << " total=" << rec.total_cost << " overflow=" << rec.total_overflow << " overflow_ratio=" << rec.overflow_ratio << " step_fraction=" << rec.step_fraction << " accepted_step=" << rec.accepted_step << " wire_rms=" << rec.hpwl_gradient_rms << " density_rms=" << rec.density_direction_rms << " direction_rms=" << rec.combined_direction_rms << " line_search_trials=" << rec.line_search_trials << " relative_improvement=" << rec.relative_improvement);
+            LOG_INFO("[GlobalPlacer] iter=" << it << " accepted=" << rec.accepted << " raw_hpwl=" << rec.hpwl << " normalized_hpwl=" << rec.normalized_hpwl << " raw_density=" << rec.density_penalty << " normalized_density=" << rec.normalized_density_penalty << " weighted_density=" << rec.weighted_density_penalty << " total_normalized=" << rec.total_cost << " density_weight=" << config_.density_weight << " zero_capacity_repulsion=" << config_.zero_capacity_repulsion << " overflow=" << rec.total_overflow << " overflow_ratio=" << rec.overflow_ratio << " active_overflow_bins=" << rec.active_overflow_bin_count << " zero_capacity_overflow_bins=" << rec.zero_capacity_overflow_bin_count << " step_fraction=" << rec.step_fraction << " accepted_step=" << rec.accepted_step << " hpwl_rms=" << rec.hpwl_gradient_rms << " density_rms=" << rec.density_direction_rms << " direction_rms=" << rec.combined_direction_rms << " max_direction_norm=" << rec.maximum_direction_norm << " line_search_trials=" << rec.line_search_trials << " relative_improvement=" << rec.relative_improvement);
         if (!rec.accepted && step_fraction < config_.minimum_step_fraction)
         {
             r.termination_reason = "step size below minimum";
