@@ -40,3 +40,16 @@ double HPWLEvaluator::totalHPWL(const PlacementDB& db) const {
     }
     return total;
 }
+
+double HPWLEvaluator::updateAllNetHPWL(PlacementDB& db) const {
+    double total = 0.0;
+
+    for (const Net& net : db.nets()) {
+        const double hpwl = computeNetHPWL(db, net);
+
+        db.net(net.id).hpwl = hpwl;
+        total += hpwl;
+    }
+
+    return total;
+}

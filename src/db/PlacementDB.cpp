@@ -90,6 +90,11 @@ int PlacementDB::getNetId(const std::string& name) const {
     return it->second;
 }
 
+double PlacementDB::getNetHPWL(int id) {
+    checkId(id, static_cast<int>(nets_.size()), "net");
+    return nets_[id].hpwl;
+}
+
 Cell& PlacementDB::cell(int id) { checkId(id, static_cast<int>(cells_.size()), "cell"); return cells_[id]; }
 const Cell& PlacementDB::cell(int id) const { checkId(id, static_cast<int>(cells_.size()), "cell"); return cells_[id]; }
 Net& PlacementDB::net(int id) { checkId(id, static_cast<int>(nets_.size()), "net"); return nets_[id]; }

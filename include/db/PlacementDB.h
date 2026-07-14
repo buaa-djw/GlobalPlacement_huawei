@@ -27,6 +27,7 @@ public:
 
     int addNet(const std::string& name);
     void addNetHPWL(int id, double hpwl);
+    double getNetHPWL(int id);
     int addPin(int cell_id, int net_id, double offset_x, double offset_y, const std::string& direction);
     int addRow(const Row& row);
 

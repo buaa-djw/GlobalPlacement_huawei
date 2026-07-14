@@ -22,7 +22,7 @@ struct GlobalPlacerConfig {
     double target_density = 0.9;
     double density_weight = 1.0;
     double zero_capacity_repulsion = 2.0;
-    GlobalPlacementMethod method = GlobalPlacementMethod::DirectSubgradient;
+    GlobalPlacementMethod method = GlobalPlacementMethod::MoreauProximal;
     MoreauProximalConfig moreau;
     int max_iterations = 20;
     double initial_step_fraction = 0.10;
