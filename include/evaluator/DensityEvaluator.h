@@ -57,5 +57,5 @@ public:
      *
      * @throws std::invalid_argument if grid data contains invalid values.
      */
-    DensityMetrics evaluate(const BinGrid& grid) const;
+    DensityMetrics evaluate(const BinGrid& grid, bool emit_warnings = true) const;
 };

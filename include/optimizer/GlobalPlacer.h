@@ -1,12 +1,19 @@
 #pragma once
 
 #include "evaluator/ObjectiveEvaluator.h"
+#include "optimizer/MoreauProximalSolver.h"
 
 #include <string>
 #include <vector>
 
 class BinGrid;
 class PlacementDB;
+
+/** @brief Available global placement optimization methods. */
+enum class GlobalPlacementMethod {
+    DirectSubgradient,
+    MoreauProximal
+};
 
 /** @brief User-tunable controls for the simple nonsmooth global placer. */
 struct GlobalPlacerConfig {
@@ -15,6 +22,8 @@ struct GlobalPlacerConfig {
     double target_density = 0.9;
     double density_weight = 1.0;
     double zero_capacity_repulsion = 2.0;
+    GlobalPlacementMethod method = GlobalPlacementMethod::DirectSubgradient;
+    MoreauProximalConfig moreau;
     int max_iterations = 20;
     double initial_step_fraction = 0.10;
     double minimum_step_fraction = 1e-5;
@@ -48,6 +57,15 @@ struct GlobalPlacerIteration {
     std::size_t zero_capacity_overflow_bin_count = 0;
     double maximum_direction_norm = 0.0;
     double relative_improvement = 0.0;
+    bool used_moreau = false;
+    double moreau_mu = 0.0;
+    int proximal_inner_iterations = 0;
+    int proximal_accepted_inner_iterations = 0;
+    double proximal_term = 0.0;
+    double proximal_objective = 0.0;
+    double proximal_displacement_rms = 0.0;
+    double proximal_residual_rms = 0.0;
+    std::string proximal_termination_reason;
 };
 
 /** @brief Final result and history from GlobalPlacer::optimize(). */
@@ -68,8 +86,9 @@ struct CellPosition { double x = 0.0; double y = 0.0; };
 /**
  * @brief Backtracking nonsmooth global placer for HPWL plus density overflow.
  *
- * The placer intentionally excludes overlap, legalizing, PR+, Moreau, and file
- * output. Fixed/terminal cells are never updated and are checked after optimize.
+ * The placer supports DirectSubgradient and MoreauProximal optimization modes.
+ * It intentionally excludes overlap, legalizing, PR+, and file output.
+ * Fixed/terminal cells are never updated and are checked after optimize.
  */
 class GlobalPlacer {
 public:

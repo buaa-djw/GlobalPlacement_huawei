@@ -74,6 +74,7 @@ add_library(placement_db STATIC
     src/evaluator/DensityEvaluator.cpp
     src/evaluator/ObjectiveEvaluator.cpp
     src/optimizer/GlobalPlacer.cpp
+    src/optimizer/MoreauProximalSolver.cpp
     src/optimizer/SubgradientEvaluator.cpp
     src/parser/LimboBookshelfAdapter.cpp
     src/grid/BinGrid.cpp
@@ -162,4 +163,8 @@ if(BUILD_TESTING)
     add_executable(test_global_placer tests/test_global_placer.cpp)
     target_link_libraries(test_global_placer PRIVATE placement_db)
     add_test(NAME global_placer_unit COMMAND test_global_placer)
+
+    add_executable(test_moreau_proximal_solver tests/test_moreau_proximal_solver.cpp)
+    target_link_libraries(test_moreau_proximal_solver PRIVATE placement_db)
+    add_test(NAME moreau_proximal_solver_unit COMMAND test_moreau_proximal_solver)
 endif()

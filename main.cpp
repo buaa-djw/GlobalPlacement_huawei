@@ -32,11 +32,16 @@ void printUsage(const char* argv0) {
     std::cerr << "Usage:\n  " << argv0
               << " --aux <path> [--bins <nx> <ny>] [--target-density <value>]"
               << " [--log <path>] [--log-level <debug|info|warn|error>]"
-              << " [--iterations <int>] [--density-weight <value>]"
+              << " [--optimizer <direct|moreau>] [--iterations <int>] [--density-weight <value>]"
               << " [--zero-capacity-repulsion <value>]"
               << " [--initial-step-fraction <value>] [--minimum-step-fraction <value>]"
               << " [--backtrack-factor <value>] [--line-search-trials <int>]"
-              << " [--stall-iterations <int>] [--report-interval <int>]\n";
+              << " [--stall-iterations <int>] [--report-interval <int>]\n"
+              << " [--moreau-mu <value>] [--moreau-inner-iterations <int>]"
+              << " [--moreau-initial-step-fraction <value>] [--moreau-minimum-step-fraction <value>]"
+              << " [--moreau-backtrack-factor <value>] [--moreau-line-search-trials <int>]"
+              << " [--moreau-stall-iterations <int>] [--moreau-residual-tolerance <value>]"
+              << " [--moreau-displacement-tolerance <value>]\n";
 }
 
 Options parseArgs(int argc, char** argv) {
@@ -48,6 +53,7 @@ Options parseArgs(int argc, char** argv) {
         else if (arg == "--target-density" && i + 1 < argc) opt.target_density = std::stod(argv[++i]);
         else if (arg == "--log" && i + 1 < argc) opt.log_path = argv[++i];
         else if (arg == "--log-level" && i + 1 < argc) opt.log_level = parseLogLevel(argv[++i]);
+        else if (arg == "--optimizer" && i + 1 < argc) { const std::string v = argv[++i]; if (v == "direct") opt.placer_config.method = GlobalPlacementMethod::DirectSubgradient; else if (v == "moreau") opt.placer_config.method = GlobalPlacementMethod::MoreauProximal; else throw std::invalid_argument("invalid optimizer: " + v + " (expected direct or moreau)"); }
         else if (arg == "--iterations" && i + 1 < argc) opt.placer_config.max_iterations = std::stoi(argv[++i]);
         else if (arg == "--density-weight" && i + 1 < argc) opt.placer_config.density_weight = std::stod(argv[++i]);
         else if (arg == "--zero-capacity-repulsion" && i + 1 < argc) opt.placer_config.zero_capacity_repulsion = std::stod(argv[++i]);
@@ -57,6 +63,15 @@ Options parseArgs(int argc, char** argv) {
         else if (arg == "--line-search-trials" && i + 1 < argc) opt.placer_config.max_line_search_trials = std::stoi(argv[++i]);
         else if (arg == "--stall-iterations" && i + 1 < argc) opt.placer_config.max_stall_iterations = std::stoi(argv[++i]);
         else if (arg == "--report-interval" && i + 1 < argc) opt.placer_config.report_interval = std::stoi(argv[++i]);
+        else if (arg == "--moreau-mu" && i + 1 < argc) opt.placer_config.moreau.mu = std::stod(argv[++i]);
+        else if (arg == "--moreau-inner-iterations" && i + 1 < argc) opt.placer_config.moreau.max_inner_iterations = std::stoi(argv[++i]);
+        else if (arg == "--moreau-initial-step-fraction" && i + 1 < argc) opt.placer_config.moreau.initial_step_fraction = std::stod(argv[++i]);
+        else if (arg == "--moreau-minimum-step-fraction" && i + 1 < argc) opt.placer_config.moreau.minimum_step_fraction = std::stod(argv[++i]);
+        else if (arg == "--moreau-backtrack-factor" && i + 1 < argc) opt.placer_config.moreau.backtrack_factor = std::stod(argv[++i]);
+        else if (arg == "--moreau-line-search-trials" && i + 1 < argc) opt.placer_config.moreau.max_line_search_trials = std::stoi(argv[++i]);
+        else if (arg == "--moreau-stall-iterations" && i + 1 < argc) opt.placer_config.moreau.max_stall_iterations = std::stoi(argv[++i]);
+        else if (arg == "--moreau-residual-tolerance" && i + 1 < argc) opt.placer_config.moreau.residual_rms_tolerance = std::stod(argv[++i]);
+        else if (arg == "--moreau-displacement-tolerance" && i + 1 < argc) opt.placer_config.moreau.displacement_rms_tolerance = std::stod(argv[++i]);
         else if (arg == "--help" || arg == "-h") { printUsage(argv[0]); std::exit(EXIT_SUCCESS); }
         else throw std::invalid_argument("unknown or incomplete argument: " + arg);
     }
@@ -126,7 +141,7 @@ int main(int argc, char** argv) {
         Logger::instance().initialize(opt.log_path, opt.log_level, true);
         logger_ready = true;
         LOG_INFO("program started");
-        LOG_INFO("resolved command-line arguments: aux=" << opt.aux_path << ", bins=" << opt.bins_x << "x" << opt.bins_y << ", target_density=" << opt.target_density << ", zero_capacity_repulsion=" << opt.placer_config.zero_capacity_repulsion);
+        LOG_INFO("resolved command-line arguments: aux=" << opt.aux_path << ", bins=" << opt.bins_x << "x" << opt.bins_y << ", target_density=" << opt.target_density << ", zero_capacity_repulsion=" << opt.placer_config.zero_capacity_repulsion << ", optimizer=" << (opt.placer_config.method == GlobalPlacementMethod::MoreauProximal ? "moreau" : "direct") << ", moreau_mu=" << opt.placer_config.moreau.mu);
         LOG_INFO("log file path: " << opt.log_path);
         LOG_INFO("benchmark path: " << opt.aux_path);
         if (opt.bins_x <= 0 || opt.bins_y <= 0 || opt.target_density <= 0.0 || opt.target_density > 1.0) {
@@ -214,7 +229,10 @@ int main(int argc, char** argv) {
         fout << "\n[Global Placement Result]\n"
              << "Initial total cost: " << initial_objective.total_cost << "\n"
              << "Final total cost: " << final_objective.total_cost << "\n"
+             << "Optimizer method: " << (opt.placer_config.method == GlobalPlacementMethod::MoreauProximal ? "moreau" : "direct") << "\n"
+             << "Density weight: " << opt.placer_config.density_weight << "\n"
              << "Zero-capacity repulsion: " << opt.placer_config.zero_capacity_repulsion << "\n"
+             << "Moreau mu: " << opt.placer_config.moreau.mu << "\n"
              << "Accepted iterations: " << placement_result.accepted_iterations << "\n"
              << "Termination reason: " << placement_result.termination_reason << "\n";
         fout.close();
@@ -241,6 +259,10 @@ int main(int argc, char** argv) {
                   << binGridSummary(final_grid) << '\n'
                   << densitySummary(final_density_metrics) << '\n'
                   << "========== Global Placement Result ==========\n"
+                  << "Optimizer method: " << (opt.placer_config.method == GlobalPlacementMethod::MoreauProximal ? "moreau" : "direct") << "\n"
+                  << "Density weight: " << opt.placer_config.density_weight << "\n"
+                  << "Zero-capacity repulsion: " << opt.placer_config.zero_capacity_repulsion << "\n"
+                  << "Moreau mu: " << opt.placer_config.moreau.mu << "\n"
                   << "Initial HPWL: " << initial_objective.hpwl << "\n"
                   << "Final HPWL: " << final_objective.hpwl << "\n"
                   << "HPWL change: " << (final_objective.hpwl - initial_objective.hpwl) << "\n"
@@ -255,6 +277,10 @@ int main(int argc, char** argv) {
                   << "Total cost improvement ratio: " << improvement << "\n"
                   << "Initial overflow ratio: " << initial_objective.overflow_ratio << "\n"
                   << "Final overflow ratio: " << final_objective.overflow_ratio << "\n"
+                  << "Proximal term: " << (placement_result.history.empty() ? 0.0 : placement_result.history.back().proximal_term) << "\n"
+                  << "Proximal objective: " << (placement_result.history.empty() ? final_objective.total_cost : placement_result.history.back().proximal_objective) << "\n"
+                  << "Displacement RMS: " << (placement_result.history.empty() ? 0.0 : placement_result.history.back().proximal_displacement_rms) << "\n"
+                  << "Proximal residual RMS: " << (placement_result.history.empty() ? 0.0 : placement_result.history.back().proximal_residual_rms) << "\n"
                   << "Attempted iterations: " << placement_result.attempted_iterations << "\n"
                   << "Accepted iterations: " << placement_result.accepted_iterations << "\n"
                   << "Termination reason: " << placement_result.termination_reason << "\n"

@@ -46,7 +46,7 @@ void checkTotal(double value, const char* field) {
 }
 }
 
-DensityMetrics DensityEvaluator::evaluate(const BinGrid& grid) const {
+DensityMetrics DensityEvaluator::evaluate(const BinGrid& grid, bool emit_warnings) const {
     const int nx = grid.numBinsX();
     const int ny = grid.numBinsY();
     const int num_bins = grid.numBins();
@@ -128,17 +128,17 @@ DensityMetrics DensityEvaluator::evaluate(const BinGrid& grid) const {
     }
     if (metrics.total_movable_area <= kDensityEpsilon) {
         metrics.overflow_ratio = 0.0;
-        LOG_WARN("Density evaluation found no movable cell area; overflow ratio is set to 0");
+        if (emit_warnings) LOG_WARN("Density evaluation found no movable cell area; overflow ratio is set to 0");
     } else {
         metrics.overflow_ratio = metrics.total_overflow / metrics.total_movable_area;
     }
-    if (metrics.zero_capacity_bin_count > 0) {
+    if (emit_warnings && metrics.zero_capacity_bin_count > 0) {
         LOG_WARN("Density evaluation found " << metrics.zero_capacity_bin_count << " zero-capacity bins");
     }
-    if (metrics.zero_capacity_occupied_bin_count > 0) {
+    if (emit_warnings && metrics.zero_capacity_occupied_bin_count > 0) {
         LOG_WARN("Density evaluation found " << metrics.zero_capacity_occupied_bin_count << " occupied zero-capacity bins");
     }
-    if (std::isinf(metrics.max_utilization)) {
+    if (emit_warnings && std::isinf(metrics.max_utilization)) {
         LOG_WARN("Density evaluation maximum utilization is infinity");
     }
     if (!std::isfinite(metrics.overflow_ratio) || metrics.overflow_ratio < -kDensityEpsilon) {

@@ -40,6 +40,15 @@ struct SubgradientResult {
     /// Normalized-density-scale surrogate descent direction.
     std::vector<double> density_direction_x;
     std::vector<double> density_direction_y;
+    /**
+     * @brief Objective descent direction before final RMS normalization.
+     *
+     * This direction preserves the relative scales of normalized HPWL and
+     * normalized density terms. MoreauProximalSolver uses it before adding
+     * the proximal regularization direction.
+     */
+    std::vector<double> objective_direction_x;
+    std::vector<double> objective_direction_y;
     /// Final RMS-normalized direction consumed by GlobalPlacer.
     std::vector<double> combined_direction_x;
     std::vector<double> combined_direction_y;
