@@ -109,7 +109,7 @@ namespace
 ObjectiveMetrics ObjectiveEvaluator::evaluate(
     const PlacementDB &db,
     const BinGrid &grid,
-    double density_weight) const
+    double density_weight, bool emit_density_warnings) const
 {
     if (!std::isfinite(density_weight) || density_weight < 0.0)
     {
@@ -123,7 +123,7 @@ ObjectiveMetrics ObjectiveEvaluator::evaluate(
 
     metrics.hpwl = hpwl_evaluator.totalHPWL(db);
 
-    const DensityMetrics density = density_evaluator.evaluate(grid);
+    const DensityMetrics density = density_evaluator.evaluate(grid, emit_density_warnings);
 
     metrics.density_penalty = density.penalty;
 

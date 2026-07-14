@@ -21,7 +21,7 @@ void net3(PlacementDB& db, int a, int b, int c) { int n = db.addNet("n" + std::t
 double norm(double x, double y) { return std::hypot(x, y); }
 
 void assertFiniteResult(const SubgradientResult& r) {
-    std::vector<const std::vector<double>*> vs{&r.hpwl_gradient_x, &r.hpwl_gradient_y, &r.hpwl_direction_x, &r.hpwl_direction_y, &r.density_direction_x, &r.density_direction_y, &r.combined_direction_x, &r.combined_direction_y};
+    std::vector<const std::vector<double>*> vs{&r.hpwl_gradient_x, &r.hpwl_gradient_y, &r.hpwl_direction_x, &r.hpwl_direction_y, &r.density_direction_x, &r.density_direction_y, &r.objective_direction_x, &r.objective_direction_y, &r.combined_direction_x, &r.combined_direction_y};
     for (auto* v : vs) for (double x : *v) assert(std::isfinite(x));
     assert(std::isfinite(r.metrics.core_reference_length));
     assert(std::isfinite(r.metrics.hpwl_subgradient_rms));
@@ -32,7 +32,7 @@ void assertFiniteResult(const SubgradientResult& r) {
 
 void assertCellZero(const SubgradientResult& r, int id) {
     near(r.hpwl_gradient_x[id], 0); near(r.hpwl_gradient_y[id], 0); near(r.hpwl_direction_x[id], 0); near(r.hpwl_direction_y[id], 0);
-    near(r.density_direction_x[id], 0); near(r.density_direction_y[id], 0); near(r.combined_direction_x[id], 0); near(r.combined_direction_y[id], 0);
+    near(r.density_direction_x[id], 0); near(r.density_direction_y[id], 0); near(r.objective_direction_x[id], 0); near(r.objective_direction_y[id], 0); near(r.combined_direction_x[id], 0); near(r.combined_direction_y[id], 0);
 }
 }
 
@@ -66,6 +66,9 @@ int main() {
     }
     { // density_weight zero combines normalized HPWL only
         PlacementDB db; row(db); int a = cell(db, "a", 0, 0), b = cell(db, "b", 10, 0); net2(db, a, b); BinGrid g(db, 1, 1, 1); SubgradientConfig c; c.density_weight = 0; auto r = SubgradientEvaluator(c).evaluate(db, g); double rms = r.metrics.hpwl_direction_rms; near(r.combined_direction_x[a], r.hpwl_direction_x[a] / rms); near(r.combined_direction_x[b], r.hpwl_direction_x[b] / rms);
+    }
+    { // objective direction composition
+        PlacementDB db; row(db, 10, 10); int a = cell(db, "a", 0, 0, 8, 8), b = cell(db, "b", 1, 1, 8, 8); net2(db, a, b); BinGrid g(db, 1, 1, 0.5); SubgradientConfig c; c.density_weight = 3.0; auto r = SubgradientEvaluator(c).evaluate(db, g); for (const Cell& ce : db.cells()) if (ce.isMovable()) { near(r.objective_direction_x[ce.id], r.hpwl_direction_x[ce.id] + c.density_weight * r.density_direction_x[ce.id]); near(r.objective_direction_y[ce.id], r.hpwl_direction_y[ce.id] + c.density_weight * r.density_direction_y[ce.id]); } double rms = r.metrics.combined_direction_rms_before_normalization; if (rms > 0) { near(r.combined_direction_x[a], r.objective_direction_x[a] / rms); near(r.combined_direction_y[a], r.objective_direction_y[a] / rms); }
     }
     { // non-movable Standard fixed, Terminal, TerminalNI zero and finite
         PlacementDB db; row(db); int m = cell(db, "m", 0, 0), f = cell(db, "f", 2, 0, 2, 2, CellType::Standard, true), t = cell(db, "t", 4, 0, 2, 2, CellType::Terminal, true), ni = cell(db, "ni", 6, 0, 2, 2, CellType::TerminalNI, true); net2(db, m, f); BinGrid g(db, 1, 1, 1); auto r = SubgradientEvaluator({}).evaluate(db, g); assertFiniteResult(r); assertCellZero(r, f); assertCellZero(r, t); assertCellZero(r, ni);

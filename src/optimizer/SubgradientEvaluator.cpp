@@ -59,7 +59,7 @@ void ensureFinite(double value, const std::string& what) {
 
 void validateOutput(const PlacementDB& db, const SubgradientResult& r, double eps) {
     const std::size_t n = db.cells().size();
-    const std::array<const std::vector<double>*, 8> vectors{{&r.hpwl_gradient_x, &r.hpwl_gradient_y, &r.hpwl_direction_x, &r.hpwl_direction_y, &r.density_direction_x, &r.density_direction_y, &r.combined_direction_x, &r.combined_direction_y}};
+    const std::array<const std::vector<double>*, 10> vectors{{&r.hpwl_gradient_x, &r.hpwl_gradient_y, &r.hpwl_direction_x, &r.hpwl_direction_y, &r.density_direction_x, &r.density_direction_y, &r.objective_direction_x, &r.objective_direction_y, &r.combined_direction_x, &r.combined_direction_y}};
     for (const auto* v : vectors) if (v->size() != n) throw std::runtime_error("SubgradientEvaluator: vector size mismatch");
     for (const Cell& c : db.cells()) {
         for (const auto* v : vectors) {
@@ -88,6 +88,7 @@ SubgradientResult SubgradientEvaluator::evaluate(const PlacementDB& db, const Bi
     r.hpwl_gradient_x.assign(n, 0.0); r.hpwl_gradient_y.assign(n, 0.0);
     r.hpwl_direction_x.assign(n, 0.0); r.hpwl_direction_y.assign(n, 0.0);
     r.density_direction_x.assign(n, 0.0); r.density_direction_y.assign(n, 0.0);
+    r.objective_direction_x.assign(n, 0.0); r.objective_direction_y.assign(n, 0.0);
     r.combined_direction_x.assign(n, 0.0); r.combined_direction_y.assign(n, 0.0);
 
     for (const Cell& c : db.cells()) if (c.isMovable()) ++r.metrics.movable_cell_count;
@@ -173,8 +174,10 @@ SubgradientResult SubgradientEvaluator::evaluate(const PlacementDB& db, const Bi
      * step size remains geometrically stable.
      */
     for (const Cell& c : db.cells()) if (c.isMovable()) {
-        r.combined_direction_x.at(c.id) = r.hpwl_direction_x.at(c.id) + config_.density_weight * r.density_direction_x.at(c.id);
-        r.combined_direction_y.at(c.id) = r.hpwl_direction_y.at(c.id) + config_.density_weight * r.density_direction_y.at(c.id);
+        r.objective_direction_x.at(c.id) = r.hpwl_direction_x.at(c.id) + config_.density_weight * r.density_direction_x.at(c.id);
+        r.objective_direction_y.at(c.id) = r.hpwl_direction_y.at(c.id) + config_.density_weight * r.density_direction_y.at(c.id);
+        r.combined_direction_x.at(c.id) = r.objective_direction_x.at(c.id);
+        r.combined_direction_y.at(c.id) = r.objective_direction_y.at(c.id);
     }
     r.metrics.combined_direction_rms_before_normalization = movableRms(db, r.combined_direction_x, r.combined_direction_y);
     if (r.metrics.combined_direction_rms_before_normalization > config_.numerical_epsilon) {

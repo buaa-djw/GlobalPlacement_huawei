@@ -37,5 +37,5 @@ class ObjectiveEvaluator
 {
 public:
     /** @brief Evaluate HPWL + density_weight * sum overflow^2. */
-    ObjectiveMetrics evaluate(const PlacementDB &db, const BinGrid &grid, double density_weight) const;
+    ObjectiveMetrics evaluate(const PlacementDB &db, const BinGrid &grid, double density_weight, bool emit_density_warnings = true) const;
 };

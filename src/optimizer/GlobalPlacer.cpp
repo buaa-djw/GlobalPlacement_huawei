@@ -1,6 +1,5 @@
 #include "optimizer/GlobalPlacer.h"
 
-#include "optimizer/SubgradientEvaluator.h"
 
 #include "db/Cell.h"
 #include "db/PlacementDB.h"
@@ -90,7 +89,7 @@ GlobalPlacerResult GlobalPlacer::optimize(PlacementDB &db) const
 {
     const std::size_t movable_count = std::count_if(db.cells().begin(), db.cells().end(), [](const Cell &c)
                                                     { return c.isMovable(); });
-    LOG_INFO("Global placement started: movable_cells=" << movable_count << " bins=" << config_.bins_x << "x" << config_.bins_y << " target_density=" << config_.target_density << " density_weight=" << config_.density_weight << " zero_capacity_repulsion=" << config_.zero_capacity_repulsion << " max_iterations=" << config_.max_iterations);
+    LOG_INFO("Global placement started: movable_cells=" << movable_count << " bins=" << config_.bins_x << "x" << config_.bins_y << " target_density=" << config_.target_density << " density_weight=" << config_.density_weight << " zero_capacity_repulsion=" << config_.zero_capacity_repulsion << " max_iterations=" << config_.max_iterations << " optimizer=" << (config_.method == GlobalPlacementMethod::MoreauProximal ? "moreau" : "direct"));
     BinGrid grid(db, config_.bins_x, config_.bins_y, config_.target_density);
     ObjectiveEvaluator eval;
     SubgradientConfig subgradient_config;
@@ -111,6 +110,44 @@ GlobalPlacerResult GlobalPlacer::optimize(PlacementDB &db) const
         restorePositions(db, best_pos);
         return r;
     }
+    if (config_.method == GlobalPlacementMethod::MoreauProximal)
+    {
+        int stalls = 0;
+        for (int it = 1; it <= config_.max_iterations; ++it)
+        {
+            r.attempted_iterations = it;
+            const auto start_pos = savePositions(db);
+            const ObjectiveMetrics start = current;
+            MoreauProximalSolver solver(config_.moreau, subgradient_config);
+            const MoreauProximalResult pr = solver.solve(db, grid);
+            GlobalPlacerIteration rec;
+            rec.iteration = it; rec.used_moreau = true; rec.moreau_mu = config_.moreau.mu;
+            rec.proximal_inner_iterations = pr.attempted_inner_iterations;
+            rec.proximal_accepted_inner_iterations = pr.accepted_inner_iterations;
+            rec.proximal_term = pr.final_proximal_metrics.proximal_term;
+            rec.proximal_objective = pr.final_proximal_metrics.proximal_objective;
+            rec.proximal_displacement_rms = pr.final_proximal_metrics.displacement_rms;
+            rec.proximal_residual_rms = pr.final_proximal_metrics.combined_residual_rms;
+            rec.proximal_termination_reason = pr.termination_reason;
+            rec.accepted = pr.accepted; rec.line_search_trials = pr.attempted_inner_iterations;
+            current = pr.accepted ? pr.final_metrics : start;
+            if (!pr.accepted) { restorePositions(db, start_pos); grid.rebuild(db); current = eval.evaluate(db, grid, config_.density_weight); ++stalls; }
+            else { ++r.accepted_iterations; stalls = 0; if (current.total_cost < r.best_metrics.total_cost) { r.best_metrics = current; best_pos = savePositions(db); } }
+            rec.hpwl=current.hpwl; rec.density_penalty=current.density_penalty; rec.normalized_hpwl=current.normalized_hpwl; rec.normalized_density_penalty=current.normalized_density_penalty; rec.weighted_density_penalty=current.weighted_density_penalty; rec.total_cost=current.total_cost; rec.total_overflow=current.total_overflow; rec.overflow_ratio=current.overflow_ratio;
+            rec.relative_improvement=(start.total_cost-current.total_cost)/std::max(std::abs(start.total_cost), kEps);
+            r.history.push_back(rec);
+            if (it % config_.report_interval == 0) LOG_INFO("[GlobalPlacer] iter=" << it << " optimizer=moreau accepted=" << rec.accepted << " raw_hpwl=" << rec.hpwl << " normalized_hpwl=" << rec.normalized_hpwl << " raw_density=" << rec.density_penalty << " normalized_density=" << rec.normalized_density_penalty << " total_normalized=" << rec.total_cost << " density_weight=" << config_.density_weight << " zero_capacity_repulsion=" << config_.zero_capacity_repulsion << " overflow_ratio=" << rec.overflow_ratio << " moreau_mu=" << rec.moreau_mu << " proximal_inner_iterations=" << rec.proximal_inner_iterations << " proximal_term=" << rec.proximal_term << " proximal_objective=" << rec.proximal_objective << " proximal_residual_rms=" << rec.proximal_residual_rms << " proximal_termination_reason=" << rec.proximal_termination_reason);
+            if (!rec.accepted && stalls >= config_.max_stall_iterations) { r.termination_reason = "line search stalled"; break; }
+            if (it == config_.max_iterations) r.termination_reason = "maximum iterations reached";
+        }
+        restorePositions(db, best_pos); grid.rebuild(db);
+        r.final_metrics = eval.evaluate(db, grid, config_.density_weight);
+        for (const Cell &c : db.cells()) { if (!std::isfinite(c.x) || !std::isfinite(c.y)) throw std::runtime_error("GlobalPlacer: non-finite coordinate at final state"); if (!c.isMovable() && (c.x != fixed_initial[c.id].x || c.y != fixed_initial[c.id].y)) throw std::runtime_error("GlobalPlacer: fixed cell moved: " + c.name); if (c.isMovable() && (c.x < grid.coreBounds().lx - kEps || c.y < grid.coreBounds().ly - kEps || c.x + c.width > grid.coreBounds().ux + kEps || c.y + c.height > grid.coreBounds().uy + kEps)) throw std::runtime_error("GlobalPlacer: movable outside core"); }
+        if (r.termination_reason.empty()) r.termination_reason = "maximum iterations reached";
+        LOG_INFO("Global placement completed: optimizer=moreau attempted_iterations=" << r.attempted_iterations << " accepted_iterations=" << r.accepted_iterations << " initial_total=" << r.initial_metrics.total_cost << " final_total=" << r.final_metrics.total_cost << " termination_reason=" << r.termination_reason);
+        return r;
+    }
+
     double step_fraction = config_.initial_step_fraction;
     int stalls = 0;
     for (int it = 1; it <= config_.max_iterations; ++it)
@@ -197,7 +234,7 @@ GlobalPlacerResult GlobalPlacer::optimize(PlacementDB &db) const
         }
         r.history.push_back(rec);
         if (it % config_.report_interval == 0)
-            LOG_INFO("[GlobalPlacer] iter=" << it << " accepted=" << rec.accepted << " raw_hpwl=" << rec.hpwl << " normalized_hpwl=" << rec.normalized_hpwl << " raw_density=" << rec.density_penalty << " normalized_density=" << rec.normalized_density_penalty << " weighted_density=" << rec.weighted_density_penalty << " total_normalized=" << rec.total_cost << " density_weight=" << config_.density_weight << " zero_capacity_repulsion=" << config_.zero_capacity_repulsion << " overflow=" << rec.total_overflow << " overflow_ratio=" << rec.overflow_ratio << " active_overflow_bins=" << rec.active_overflow_bin_count << " zero_capacity_overflow_bins=" << rec.zero_capacity_overflow_bin_count << " step_fraction=" << rec.step_fraction << " accepted_step=" << rec.accepted_step << " hpwl_rms=" << rec.hpwl_gradient_rms << " density_rms=" << rec.density_direction_rms << " direction_rms=" << rec.combined_direction_rms << " max_direction_norm=" << rec.maximum_direction_norm << " line_search_trials=" << rec.line_search_trials << " relative_improvement=" << rec.relative_improvement);
+            LOG_INFO("[GlobalPlacer] iter=" << it << " optimizer=direct accepted=" << rec.accepted << " raw_hpwl=" << rec.hpwl << " normalized_hpwl=" << rec.normalized_hpwl << " raw_density=" << rec.density_penalty << " normalized_density=" << rec.normalized_density_penalty << " weighted_density=" << rec.weighted_density_penalty << " total_normalized=" << rec.total_cost << " density_weight=" << config_.density_weight << " zero_capacity_repulsion=" << config_.zero_capacity_repulsion << " overflow=" << rec.total_overflow << " overflow_ratio=" << rec.overflow_ratio << " active_overflow_bins=" << rec.active_overflow_bin_count << " zero_capacity_overflow_bins=" << rec.zero_capacity_overflow_bin_count << " step_fraction=" << rec.step_fraction << " accepted_step=" << rec.accepted_step << " hpwl_rms=" << rec.hpwl_gradient_rms << " density_rms=" << rec.density_direction_rms << " direction_rms=" << rec.combined_direction_rms << " max_direction_norm=" << rec.maximum_direction_norm << " line_search_trials=" << rec.line_search_trials << " relative_improvement=" << rec.relative_improvement);
         if (!rec.accepted && step_fraction < config_.minimum_step_fraction)
         {
             r.termination_reason = "step size below minimum";
