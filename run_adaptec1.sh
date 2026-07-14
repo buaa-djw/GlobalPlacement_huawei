@@ -3,7 +3,7 @@ set -e
 
 PROJECT_ROOT=/home/djw/Desktop/GlobalPlacement_huawei
 LIMBO_ROOT=${PROJECT_ROOT}/thrid_party/Limbo
-AUX_PATH=${PROJECT_ROOT}/testbench/ispd2005/adaptec3/adaptec3.aux
+AUX_PATH=${PROJECT_ROOT}/testbench/ispd2005/adaptec1/adaptec1.aux
 
 cd ${PROJECT_ROOT}
 

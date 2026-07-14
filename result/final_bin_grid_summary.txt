@@ -5,20 +5,20 @@ Bin size         : 167.062 x 166.875
 Target density   : 0.900
 Movable area     : 37286292.000
 Fixed area       : 49164072.000
-Total overflow   : 4896296.051
-Overflow bins    : 1857
+Total overflow   : 4841047.876
+Overflow bins    : 1881
 Max utilization  : inf
 =====================================
 ========== Density Evaluation ==========
-Density penalty        : 13286249614.453903
-Total overflow         : 4896296.050781
-Overflow ratio         : 0.131316
-Overflow bins          : 1857
+Density penalty        : 13194734848.344198
+Total overflow         : 4841047.876368
+Overflow ratio         : 0.129835
+Overflow bins          : 1881
 Movable area           : 37286292.000000
 Fixed area             : 49164072.000000
 Movable capacity       : 56559829.007812
 Maximum utilization    : inf
-Average utilization    : 1.148938
+Average utilization    : 1.162179
 Zero-capacity bins     : 1126
-Occupied zero-cap bins : 126
+Occupied zero-cap bins : 137
 ========================================

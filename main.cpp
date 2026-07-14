@@ -23,7 +23,7 @@ struct Options {
     int bins_x = 64;
     int bins_y = 64;
     double target_density = 0.9;
-    std::string log_path = "result/global_placer.log";
+    std::string log_path = "../result/global_placer.log";
     LogLevel log_level = LogLevel::Info;
     GlobalPlacerConfig placer_config;
 };
@@ -149,7 +149,7 @@ int main(int argc, char** argv) {
             "Deterministic initial placement completed"
         );
 
-
+        //线长计算
         LOG_INFO("HPWL evaluation started");
         HPWLEvaluator hpwl_evaluator;
         double total_hpwl = 0.0;
@@ -161,6 +161,7 @@ int main(int argc, char** argv) {
         }
         LOG_INFO("total HPWL: " << std::fixed << std::setprecision(3) << total_hpwl);
 
+        //开始搭建bin，并计算容量
         LOG_INFO("BinGrid construction started");
         BinGrid grid(db, opt.bins_x, opt.bins_y, opt.target_density);
         const Box& core = grid.coreBounds();
@@ -168,6 +169,7 @@ int main(int argc, char** argv) {
         LOG_INFO("bin count: " << grid.numBins() << ", bin size=" << grid.binWidth() << "x" << grid.binHeight() << ", target density=" << grid.targetDensity());
         LOG_INFO("BinGrid totals: movable_area=" << grid.totalMovableArea() << ", fixed_area=" << grid.totalFixedArea() << ", total_overflow=" << grid.totalOverflow() << ", overflow_bins=" << grid.overflowBinCount() << ", max_utilization=" << grid.maxUtilization());
 
+        //计算每一个bin的密度
         LOG_INFO("Density evaluation started");
         DensityEvaluator density_evaluator;
         const DensityMetrics density_metrics = density_evaluator.evaluate(grid);
@@ -184,20 +186,24 @@ int main(int argc, char** argv) {
                  << ", zero_capacity_bins=" << density_metrics.zero_capacity_bin_count
                  << ", zero_capacity_occupied_bins=" << density_metrics.zero_capacity_occupied_bin_count);
 
-
+        
+        //开始进行优化
         ObjectiveEvaluator objective_evaluator;
         ObjectiveMetrics initial_objective = objective_evaluator.evaluate(db, grid, opt.placer_config.density_weight);
 
+        //开始全局布局
         GlobalPlacer placer(opt.placer_config);
         GlobalPlacerResult placement_result = placer.optimize(db);
 
+        //记录最终结果
         BinGrid final_grid(db, opt.bins_x, opt.bins_y, opt.target_density);
         const DensityMetrics final_density_metrics = density_evaluator.evaluate(final_grid);
         const ObjectiveMetrics final_objective = objective_evaluator.evaluate(db, final_grid, opt.placer_config.density_weight);
         const double improvement = (initial_objective.total_cost - final_objective.total_cost) / std::max(std::abs(initial_objective.total_cost), 1e-12);
 
-        std::filesystem::create_directories("result");
-        const std::string placement_summary = "result/placementdb_summary.txt";
+        //打印summary
+        std::filesystem::create_directories("../result");
+        const std::string placement_summary = "../result/placementdb_summary.txt";
         std::ofstream fout(placement_summary);
         if (!fout) LOG_FATAL("cannot open summary output: " << placement_summary);
         db.printSummary(fout);
@@ -210,11 +216,18 @@ int main(int argc, char** argv) {
              << "Termination reason: " << placement_result.termination_reason << "\n";
         fout.close();
 
-        const std::string grid_summary_path = "result/bin_grid_summary.txt";
+        const std::string grid_summary_path = "../result/bin_grid_summary.txt";
+        const std::string final_grid_summary_path = "../result/final_bin_grid_summary.txt";
         std::ofstream gout(grid_summary_path);
+        std::ofstream fgout(final_grid_summary_path);
+
         if (!gout) LOG_FATAL("cannot open BinGrid summary output: " << grid_summary_path);
         gout << binGridSummary(grid) << '\n' << densitySummary(density_metrics) << '\n';
         LOG_INFO("summary output path: " << grid_summary_path);
+
+        if (!fgout) LOG_FATAL("cannot open BinGrid summary output: " << final_grid_summary_path);
+        fgout << binGridSummary(final_grid) << '\n' << densitySummary(final_density_metrics) << '\n';
+        LOG_INFO("summary output path: " << final_grid_summary_path);
 
         db.printSummary(std::cout);
         std::cout << "========== Initial Placement Evaluation ==========" << '\n'
@@ -222,6 +235,8 @@ int main(int argc, char** argv) {
                   << "==================================================" << '\n'
                   << binGridSummary(grid) << '\n'
                   << densitySummary(density_metrics) << '\n'
+                  << binGridSummary(final_grid) << '\n'
+                  << densitySummary(final_density_metrics) << '\n'
                   << "========== Global Placement Result ==========\n"
                   << "Initial HPWL: " << initial_objective.hpwl << "\n"
                   << "Final HPWL: " << final_objective.hpwl << "\n"
