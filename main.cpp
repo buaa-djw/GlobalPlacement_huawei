@@ -1,10 +1,14 @@
 #include "db/PlacementDB.h"
 #include "evaluator/HPWLEvaluator.h"
 #include "evaluator/DensityEvaluator.h"
+#include "evaluator/ObjectiveEvaluator.h"
+#include "optimizer/GlobalPlacer.h"
 #include "grid/BinGrid.h"
 #include "parser/LimboBookshelfAdapter.h"
 #include "utils/Logger.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -21,12 +25,17 @@ struct Options {
     double target_density = 0.9;
     std::string log_path = "result/global_placer.log";
     LogLevel log_level = LogLevel::Info;
+    GlobalPlacerConfig placer_config;
 };
 
 void printUsage(const char* argv0) {
     std::cerr << "Usage:\n  " << argv0
               << " --aux <path> [--bins <nx> <ny>] [--target-density <value>]"
-              << " [--log <path>] [--log-level <debug|info|warn|error>]\n";
+              << " [--log <path>] [--log-level <debug|info|warn|error>]"
+              << " [--iterations <int>] [--density-weight <value>]"
+              << " [--initial-step-fraction <value>] [--minimum-step-fraction <value>]"
+              << " [--backtrack-factor <value>] [--line-search-trials <int>]"
+              << " [--stall-iterations <int>] [--report-interval <int>]\n";
 }
 
 Options parseArgs(int argc, char** argv) {
@@ -38,10 +47,19 @@ Options parseArgs(int argc, char** argv) {
         else if (arg == "--target-density" && i + 1 < argc) opt.target_density = std::stod(argv[++i]);
         else if (arg == "--log" && i + 1 < argc) opt.log_path = argv[++i];
         else if (arg == "--log-level" && i + 1 < argc) opt.log_level = parseLogLevel(argv[++i]);
+        else if (arg == "--iterations" && i + 1 < argc) opt.placer_config.max_iterations = std::stoi(argv[++i]);
+        else if (arg == "--density-weight" && i + 1 < argc) opt.placer_config.density_weight = std::stod(argv[++i]);
+        else if (arg == "--initial-step-fraction" && i + 1 < argc) opt.placer_config.initial_step_fraction = std::stod(argv[++i]);
+        else if (arg == "--minimum-step-fraction" && i + 1 < argc) opt.placer_config.minimum_step_fraction = std::stod(argv[++i]);
+        else if (arg == "--backtrack-factor" && i + 1 < argc) opt.placer_config.backtrack_factor = std::stod(argv[++i]);
+        else if (arg == "--line-search-trials" && i + 1 < argc) opt.placer_config.max_line_search_trials = std::stoi(argv[++i]);
+        else if (arg == "--stall-iterations" && i + 1 < argc) opt.placer_config.max_stall_iterations = std::stoi(argv[++i]);
+        else if (arg == "--report-interval" && i + 1 < argc) opt.placer_config.report_interval = std::stoi(argv[++i]);
         else if (arg == "--help" || arg == "-h") { printUsage(argv[0]); std::exit(EXIT_SUCCESS); }
         else throw std::invalid_argument("unknown or incomplete argument: " + arg);
     }
     if (opt.aux_path.empty()) throw std::invalid_argument("missing required --aux <path>");
+    opt.placer_config.bins_x = opt.bins_x; opt.placer_config.bins_y = opt.bins_y; opt.placer_config.target_density = opt.target_density;
     return opt;
 }
 
@@ -166,16 +184,33 @@ int main(int argc, char** argv) {
                  << ", zero_capacity_bins=" << density_metrics.zero_capacity_bin_count
                  << ", zero_capacity_occupied_bins=" << density_metrics.zero_capacity_occupied_bin_count);
 
+
+        ObjectiveEvaluator objective_evaluator;
+        ObjectiveMetrics initial_objective = objective_evaluator.evaluate(db, grid, opt.placer_config.density_weight);
+
+        GlobalPlacer placer(opt.placer_config);
+        GlobalPlacerResult placement_result = placer.optimize(db);
+
+        BinGrid final_grid(db, opt.bins_x, opt.bins_y, opt.target_density);
+        const DensityMetrics final_density_metrics = density_evaluator.evaluate(final_grid);
+        const ObjectiveMetrics final_objective = objective_evaluator.evaluate(db, final_grid, opt.placer_config.density_weight);
+        const double improvement = (initial_objective.total_cost - final_objective.total_cost) / std::max(std::abs(initial_objective.total_cost), 1e-12);
+
         std::filesystem::create_directories("result");
-        const std::string placement_summary = "../result/placementdb_summary.txt";
+        const std::string placement_summary = "result/placementdb_summary.txt";
         std::ofstream fout(placement_summary);
         if (!fout) LOG_FATAL("cannot open summary output: " << placement_summary);
         db.printSummary(fout);
         fout << "\n[Initial Placement Evaluation]\n" << std::fixed << std::setprecision(3) << "Total HPWL: " << total_hpwl << "\n";
         writeDensitySummary(fout, density_metrics);
+        fout << "\n[Global Placement Result]\n"
+             << "Initial total cost: " << initial_objective.total_cost << "\n"
+             << "Final total cost: " << final_objective.total_cost << "\n"
+             << "Accepted iterations: " << placement_result.accepted_iterations << "\n"
+             << "Termination reason: " << placement_result.termination_reason << "\n";
         fout.close();
 
-        const std::string grid_summary_path = "../result/bin_grid_summary.txt";
+        const std::string grid_summary_path = "result/bin_grid_summary.txt";
         std::ofstream gout(grid_summary_path);
         if (!gout) LOG_FATAL("cannot open BinGrid summary output: " << grid_summary_path);
         gout << binGridSummary(grid) << '\n' << densitySummary(density_metrics) << '\n';
@@ -186,7 +221,22 @@ int main(int argc, char** argv) {
                   << std::fixed << std::setprecision(3) << "Total HPWL: " << total_hpwl << '\n'
                   << "==================================================" << '\n'
                   << binGridSummary(grid) << '\n'
-                  << densitySummary(density_metrics) << '\n';
+                  << densitySummary(density_metrics) << '\n'
+                  << "========== Global Placement Result ==========\n"
+                  << "Initial HPWL: " << initial_objective.hpwl << "\n"
+                  << "Final HPWL: " << final_objective.hpwl << "\n"
+                  << "HPWL change: " << (final_objective.hpwl - initial_objective.hpwl) << "\n"
+                  << "Initial density penalty: " << initial_objective.density_penalty << "\n"
+                  << "Final density penalty: " << final_objective.density_penalty << "\n"
+                  << "Initial total cost: " << initial_objective.total_cost << "\n"
+                  << "Final total cost: " << final_objective.total_cost << "\n"
+                  << "Total cost improvement ratio: " << improvement << "\n"
+                  << "Initial overflow ratio: " << initial_objective.overflow_ratio << "\n"
+                  << "Final overflow ratio: " << final_objective.overflow_ratio << "\n"
+                  << "Attempted iterations: " << placement_result.attempted_iterations << "\n"
+                  << "Accepted iterations: " << placement_result.accepted_iterations << "\n"
+                  << "Termination reason: " << placement_result.termination_reason << "\n"
+                  << "=============================================\n";
         LOG_INFO("program completed successfully");
         Logger::instance().flush();
         return EXIT_SUCCESS;
