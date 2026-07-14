@@ -74,6 +74,7 @@ add_library(placement_db STATIC
     src/evaluator/DensityEvaluator.cpp
     src/evaluator/ObjectiveEvaluator.cpp
     src/optimizer/GlobalPlacer.cpp
+    src/optimizer/SubgradientEvaluator.cpp
     src/parser/LimboBookshelfAdapter.cpp
     src/grid/BinGrid.cpp
     src/utils/Logger.cpp
@@ -153,6 +154,10 @@ if(BUILD_TESTING)
     add_executable(test_objective_evaluator tests/test_objective_evaluator.cpp)
     target_link_libraries(test_objective_evaluator PRIVATE placement_db)
     add_test(NAME objective_evaluator_unit COMMAND test_objective_evaluator)
+
+    add_executable(test_subgradient_evaluator tests/test_subgradient_evaluator.cpp)
+    target_link_libraries(test_subgradient_evaluator PRIVATE placement_db)
+    add_test(NAME subgradient_evaluator_unit COMMAND test_subgradient_evaluator)
 
     add_executable(test_global_placer tests/test_global_placer.cpp)
     target_link_libraries(test_global_placer PRIVATE placement_db)

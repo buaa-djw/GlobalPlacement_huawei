@@ -33,6 +33,7 @@ void printUsage(const char* argv0) {
               << " --aux <path> [--bins <nx> <ny>] [--target-density <value>]"
               << " [--log <path>] [--log-level <debug|info|warn|error>]"
               << " [--iterations <int>] [--density-weight <value>]"
+              << " [--zero-capacity-repulsion <value>]"
               << " [--initial-step-fraction <value>] [--minimum-step-fraction <value>]"
               << " [--backtrack-factor <value>] [--line-search-trials <int>]"
               << " [--stall-iterations <int>] [--report-interval <int>]\n";
@@ -49,6 +50,7 @@ Options parseArgs(int argc, char** argv) {
         else if (arg == "--log-level" && i + 1 < argc) opt.log_level = parseLogLevel(argv[++i]);
         else if (arg == "--iterations" && i + 1 < argc) opt.placer_config.max_iterations = std::stoi(argv[++i]);
         else if (arg == "--density-weight" && i + 1 < argc) opt.placer_config.density_weight = std::stod(argv[++i]);
+        else if (arg == "--zero-capacity-repulsion" && i + 1 < argc) opt.placer_config.zero_capacity_repulsion = std::stod(argv[++i]);
         else if (arg == "--initial-step-fraction" && i + 1 < argc) opt.placer_config.initial_step_fraction = std::stod(argv[++i]);
         else if (arg == "--minimum-step-fraction" && i + 1 < argc) opt.placer_config.minimum_step_fraction = std::stod(argv[++i]);
         else if (arg == "--backtrack-factor" && i + 1 < argc) opt.placer_config.backtrack_factor = std::stod(argv[++i]);
@@ -124,7 +126,7 @@ int main(int argc, char** argv) {
         Logger::instance().initialize(opt.log_path, opt.log_level, true);
         logger_ready = true;
         LOG_INFO("program started");
-        LOG_INFO("resolved command-line arguments: aux=" << opt.aux_path << ", bins=" << opt.bins_x << "x" << opt.bins_y << ", target_density=" << opt.target_density);
+        LOG_INFO("resolved command-line arguments: aux=" << opt.aux_path << ", bins=" << opt.bins_x << "x" << opt.bins_y << ", target_density=" << opt.target_density << ", zero_capacity_repulsion=" << opt.placer_config.zero_capacity_repulsion);
         LOG_INFO("log file path: " << opt.log_path);
         LOG_INFO("benchmark path: " << opt.aux_path);
         if (opt.bins_x <= 0 || opt.bins_y <= 0 || opt.target_density <= 0.0 || opt.target_density > 1.0) {
@@ -212,6 +214,7 @@ int main(int argc, char** argv) {
         fout << "\n[Global Placement Result]\n"
              << "Initial total cost: " << initial_objective.total_cost << "\n"
              << "Final total cost: " << final_objective.total_cost << "\n"
+             << "Zero-capacity repulsion: " << opt.placer_config.zero_capacity_repulsion << "\n"
              << "Accepted iterations: " << placement_result.accepted_iterations << "\n"
              << "Termination reason: " << placement_result.termination_reason << "\n";
         fout.close();
@@ -243,6 +246,10 @@ int main(int argc, char** argv) {
                   << "HPWL change: " << (final_objective.hpwl - initial_objective.hpwl) << "\n"
                   << "Initial density penalty: " << initial_objective.density_penalty << "\n"
                   << "Final density penalty: " << final_objective.density_penalty << "\n"
+                  << "Initial normalized HPWL: " << initial_objective.normalized_hpwl << "\n"
+                  << "Final normalized HPWL: " << final_objective.normalized_hpwl << "\n"
+                  << "Initial normalized density penalty: " << initial_objective.normalized_density_penalty << "\n"
+                  << "Final normalized density penalty: " << final_objective.normalized_density_penalty << "\n"
                   << "Initial total cost: " << initial_objective.total_cost << "\n"
                   << "Final total cost: " << final_objective.total_cost << "\n"
                   << "Total cost improvement ratio: " << improvement << "\n"
