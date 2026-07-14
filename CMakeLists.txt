@@ -70,6 +70,10 @@ endif()
 # =========================
 add_library(placement_db STATIC
     src/db/PlacementDB.cpp
+    src/initializer/SimplePackingInitialPlacer.cpp
+    src/initializer/QuadraticInitialPlacer.cpp
+    src/solver/CsrMatrix.cpp
+    src/solver/PreconditionedConjugateGradient.cpp
     src/evaluator/HPWLEvaluator.cpp
     src/evaluator/DensityEvaluator.cpp
     src/evaluator/ObjectiveEvaluator.cpp

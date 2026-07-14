@@ -4,6 +4,8 @@
 #include "evaluator/ObjectiveEvaluator.h"
 #include "optimizer/GlobalPlacer.h"
 #include "grid/BinGrid.h"
+#include "initializer/QuadraticInitialPlacer.h"
+#include "initializer/SimplePackingInitialPlacer.h"
 #include "parser/LimboBookshelfAdapter.h"
 #include "utils/Logger.h"
 
@@ -16,6 +18,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <memory>
 
 namespace
 {
@@ -28,6 +31,9 @@ namespace
         std::string log_path = "../result/global_placer.log";
         LogLevel log_level = LogLevel::Info;
         GlobalPlacerConfig placer_config;
+        InitialPlacementMethod initial_method = InitialPlacementMethod::SimplePacking;
+        SimplePackingInitialPlacerConfig simple_initial_config;
+        QuadraticInitialPlacerConfig quadratic_initial_config;
     };
 
     void printUsage(const char *argv0)
@@ -36,6 +42,10 @@ namespace
                   << " --aux <path> [--bins <nx> <ny>] [--target-density <value>]\n"
                   << " --log <path> [--log-level <debug|info|warn|error>]\n"
                   << " --optimizer <direct|moreau> [--iterations <int>] [--density-weight <value>]\n"
+                  << " --initial-placement <simple|quadratic> [--initial-max-net-degree <int>]\n"
+                  << " --initial-anchor-weight-ratio <value> [--initial-blend-factor <value>]\n"
+                  << " --initial-cg-iterations <int> [--initial-cg-tolerance <value>]\n"
+                  << " --initial-require-convergence [--initial-ignore-pin-offsets]\n"
                   << " --zero-capacity-repulsion <value>\n"
                   << " --initial-step-fraction <value> [--minimum-step-fraction <value>]\n"
                   << " --backtrack-factor <value> [--line-search-trials <int>]\n"
@@ -76,6 +86,27 @@ namespace
                 else
                     throw std::invalid_argument("invalid optimizer: " + v + " (expected direct or moreau)");
             }
+            else if (arg == "--initial-placement" && i + 1 < argc)
+            {
+                const std::string v = argv[++i];
+                if (v == "simple") opt.initial_method = InitialPlacementMethod::SimplePacking;
+                else if (v == "quadratic") opt.initial_method = InitialPlacementMethod::QuadraticConnectivity;
+                else throw std::invalid_argument("invalid initial placement: " + v + " (expected simple or quadratic)");
+            }
+            else if (arg == "--initial-max-net-degree" && i + 1 < argc)
+                opt.quadratic_initial_config.maximum_net_degree = std::stoi(argv[++i]);
+            else if (arg == "--initial-anchor-weight-ratio" && i + 1 < argc)
+                opt.quadratic_initial_config.anchor_weight_ratio = std::stod(argv[++i]);
+            else if (arg == "--initial-blend-factor" && i + 1 < argc)
+                opt.quadratic_initial_config.blend_factor = std::stod(argv[++i]);
+            else if (arg == "--initial-cg-iterations" && i + 1 < argc)
+                opt.quadratic_initial_config.solver.maximum_iterations = std::stoi(argv[++i]);
+            else if (arg == "--initial-cg-tolerance" && i + 1 < argc)
+                opt.quadratic_initial_config.solver.relative_tolerance = std::stod(argv[++i]);
+            else if (arg == "--initial-require-convergence")
+                opt.quadratic_initial_config.require_solver_convergence = true;
+            else if (arg == "--initial-ignore-pin-offsets")
+                opt.quadratic_initial_config.use_pin_offsets = false;
             else if (arg == "--iterations" && i + 1 < argc)
                 opt.placer_config.max_iterations = std::stoi(argv[++i]);
             else if (arg == "--density-weight" && i + 1 < argc)
@@ -125,7 +156,34 @@ namespace
         opt.placer_config.bins_x = opt.bins_x;
         opt.placer_config.bins_y = opt.bins_y;
         opt.placer_config.target_density = opt.target_density;
+        opt.quadratic_initial_config.simple_reference = opt.simple_initial_config;
         return opt;
+    }
+
+
+    std::unique_ptr<InitialPlacer> createInitialPlacer(const Options& options)
+    {
+        if (options.initial_method == InitialPlacementMethod::QuadraticConnectivity)
+        {
+            return std::make_unique<QuadraticInitialPlacer>(options.quadratic_initial_config);
+        }
+        return std::make_unique<SimplePackingInitialPlacer>(options.simple_initial_config);
+    }
+
+    void logInitialPlacementResult(const InitialPlacementResult& r)
+    {
+        LOG_INFO("initial placement method: " << r.method);
+        LOG_INFO("initial movable cell count: " << r.movable_cell_count);
+        LOG_INFO("initial active net count: " << r.active_net_count);
+        LOG_INFO("initial skipped high-degree net count: " << r.skipped_high_degree_net_count);
+        LOG_INFO("initial x solver iterations: " << r.x_solver_iterations);
+        LOG_INFO("initial y solver iterations: " << r.y_solver_iterations);
+        LOG_INFO("initial x relative residual: " << r.x_relative_residual);
+        LOG_INFO("initial y relative residual: " << r.y_relative_residual);
+        LOG_INFO("initial x converged: " << (r.x_converged ? "true" : "false"));
+        LOG_INFO("initial y converged: " << (r.y_converged ? "true" : "false"));
+        LOG_INFO("initial used fallback: " << (r.used_fallback ? "true" : "false"));
+        LOG_INFO("initial message: " << r.message);
     }
 
     std::string binGridSummary(const BinGrid &grid)
@@ -215,10 +273,11 @@ int main(int argc, char **argv)
         LOG_INFO("cell/net/pin/row counts: cells=" << db.cells().size() << ", nets=" << db.nets().size() << ", pins=" << db.pins().size() << ", rows=" << db.rows().size());
 
         // 初始化布局
-        LOG_INFO("Generating deterministic initial placement");
-        db.initializeSimplePlacement();
-        LOG_INFO(
-            "Deterministic initial placement completed");
+        LOG_INFO("Initial placement started");
+        std::unique_ptr<InitialPlacer> initial_placer = createInitialPlacer(opt);
+        const InitialPlacementResult initial_result = initial_placer->place(db);
+        logInitialPlacementResult(initial_result);
+        LOG_INFO("Initial placement completed");
 
         // 线长计算
         LOG_INFO("HPWL evaluation started");

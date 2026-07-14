@@ -16,14 +16,6 @@ class PlacementDB {
 public:
     int addCell(const std::string& name, double width, double height, CellType type);
 
-    /**
-     * @brief Assign deterministic initial coordinates to all non-fixed cells.
-     *
-     * The positions are spread over the placement core so HPWL and density
-     * evaluation do not start from a degenerate all-zero placement.
-     */
-    void initializeSimplePlacement();
-
 
     int addNet(const std::string& name);
     void addNetHPWL(int id, double hpwl);
@@ -62,6 +54,7 @@ public:
     const std::vector<Row>& rows() const { return rows_; }
 
     void setCellLocation(const std::string& name, double x, double y, bool fixed, const std::string& orientation = "N");
+    void setCellPosition(int cell_id, double x, double y);
     void printSummary(std::ostream& os) const;
 
 private:
