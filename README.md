@@ -5,11 +5,14 @@ This repository is currently a minimal C++17 placement-analysis baseline for rep
 - Bookshelf parser front end through the existing Limbo adapter, with a compatibility parser fallback.
 - `PlacementDB` with continuous zero-based cell/net/pin/row IDs.
 - Exact HPWL evaluation from the input `.pl` placement.
+- Equations (3)--(8) exact weighted L1 wirelength model whose value matches exact HPWL.
+- Equation (13) exact wirelength subgradient with previous-iteration tie handling.
+- Equation (12) nonsmooth objective composition `f = W + lambda P`.
 - Equations (9)--(12) exact density model based on exact cell-bin overlap lengths and quadratic overflow penalty.
 - Equation (18) OFR.
 - Section III-B exact density subgradient with paper-defined random subderivatives at nondifferentiable boundaries.
 
-The current stage intentionally does **not** include initial placement, clustering, multilevel placement, HPWL subgradients, objective-function combination, Polak--Ribiere optimization, global optimization, legalization, or detailed placement. Running the program does not modify any cell coordinates.
+The current stage intentionally does **not** include initial placement, clustering, multilevel placement, Polak--Ribiere optimization, global optimization, legalization, or detailed placement. Running the program does not modify any cell coordinates.
 
 ## Build
 
@@ -73,6 +76,24 @@ pin_y = cell.y + 0.5 * cell.height + offset_y
 ```
 
 Non-`N` orientations are warned about by the parser path when relevant, but no orientation transform or coordinate modification is performed in this stage.
+
+## Exact Weighted L1 Wirelength
+
+The paper equations (3)--(8) are implemented as an exact weighted L1 wirelength subgradient. The value equals exact HPWL but is evaluated through the paper pair construction rather than by an extrema-only gradient shortcut. Two-pin nets use one unit-weight pair, three-pin nets use all three unordered pairs with weight `0.5`, and each `p > 3` net uses `2p - 3` weighted pairs per axis with weight `1 / (p - 1)`.
+
+For `p > 3`, each axis independently sorts pins by `(coordinate, pin_id)`, selects exactly one minimum boundary representative and one maximum boundary representative, treats all other pins as inner pins, and generates the min-to-all plus max-to-inner pairs. This deterministic tie convention resolves the paper's unspecified tied-extrema representative choice while preserving exact HPWL.
+
+Equation (13) uses actual pin coordinates from `PlacementDB::pinPosition`, not only cell centers. If a canonical pair has equal current coordinates, the caller-provided previous pin-coordinate snapshot selects the Section III-A direction rule: previous greater samples `theta1 ~ Uniform[0, pi/3]`, previous less samples `theta1 ~ Uniform[2pi/3, pi]`, and no previous/equal previous uses `theta1 = 0`. The caller supplies `std::mt19937_64`, so a fixed seed and fixed previous snapshot reproduce random tie subgradients. Fixed/non-movable objects still participate in wirelength value and pair classification, but their gradient entries are zero.
+
+## Nonsmooth Objective
+
+Equation (12) is available as an internal evaluator:
+
+```text
+f(x,y) = W(x,y) + lambda * P(x,y)
+```
+
+`W` is the exact weighted L1 wirelength value, `P` is the unscaled quadratic density penalty, and the returned subgradient is the direct mathematical sum of wirelength subgradient plus `lambda` times density subgradient. The objective evaluator calls ExactWirelengthSubgradient before ExactDensitySubgradient when a shared `std::mt19937_64` is supplied, so a fixed seed is reproducible. Objective and density penalty remain internal optimization quantities; the default executable still prints only HPWL and OFR.
 
 ## Exact Density Definition
 
