@@ -39,6 +39,8 @@ add_library(placement_core STATIC
   src/density/ExactDensityEvaluator.cpp
   src/density/PaperOverlapFunction.cpp
   src/density/ExactDensitySubgradient.cpp
+  src/wirelength/ExactWirelengthSubgradient.cpp
+  src/objective/NonsmoothObjectiveEvaluator.cpp
 )
 
 target_include_directories(placement_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIMBO_INCLUDE_DIR})
@@ -54,7 +56,7 @@ target_link_libraries(global_placer PRIVATE placement_core)
 
 include(CTest)
 if(BUILD_TESTING)
-  foreach(t placement_db hpwl exact_bin_grid exact_density_evaluator exact_density_subgradient adaptec2_smoke)
+  foreach(t placement_db hpwl exact_bin_grid exact_density_evaluator exact_density_subgradient exact_wirelength_subgradient nonsmooth_objective adaptec2_smoke)
     add_executable(test_${t} tests/test_${t}.cpp)
     target_link_libraries(test_${t} PRIVATE placement_core)
     add_test(NAME ${t}_unit COMMAND test_${t})
