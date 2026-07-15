@@ -200,174 +200,80 @@ void PlacementDB::printSummary(std::ostream& os) const {
 }
 */
 
-void PlacementDB::printSummary(std::ostream& os) const {
-    constexpr size_t kMaxDump = 100;
+void PlacementDB::printSummary(std::ostream& os) const
+{
+    const std::size_t movable_count =
+        static_cast<std::size_t>(
+            std::count_if(
+                cells_.begin(),
+                cells_.end(),
+                [](const Cell& cell) {
+                    return cell.isMovable();
+                }
+            )
+        );
 
-    const size_t fixed_count = static_cast<size_t>(
-        std::count_if(cells_.begin(), cells_.end(), [](const Cell& c) {
-            return  c.is_fixed;
-        })
-    );
+    const std::size_t fixed_flag_count =
+        static_cast<std::size_t>(
+            std::count_if(
+                cells_.begin(),
+                cells_.end(),
+                [](const Cell& cell) {
+                    return cell.is_fixed;
+                }
+            )
+        );
 
-    size_t max_degree = 0;
-    for (const auto& n : nets_) {
-        max_degree = std::max(max_degree, n.pin_ids.size());
+    const std::size_t terminal_count =
+        static_cast<std::size_t>(
+            std::count_if(
+                cells_.begin(),
+                cells_.end(),
+                [](const Cell& cell) {
+                    return cell.type ==
+                           CellType::Terminal;
+                }
+            )
+        );
+
+    const std::size_t terminal_ni_count =
+        static_cast<std::size_t>(
+            std::count_if(
+                cells_.begin(),
+                cells_.end(),
+                [](const Cell& cell) {
+                    return cell.type ==
+                           CellType::TerminalNI;
+                }
+            )
+        );
+
+    std::size_t max_degree = 0;
+
+    for (const Net& net : nets_) {
+        max_degree =
+            std::max(
+                max_degree,
+                net.pin_ids.size()
+            );
     }
 
-    double min_x = std::numeric_limits<double>::infinity();
-    double min_y = std::numeric_limits<double>::infinity();
-    double max_x = -std::numeric_limits<double>::infinity();
-    double max_y = -std::numeric_limits<double>::infinity();
-
-    for (const auto& c : cells_) {
-        min_x = std::min(min_x, c.x);
-        min_y = std::min(min_y, c.y);
-        max_x = std::max(max_x, c.x + c.width);
-        max_y = std::max(max_y, c.y + c.height);
-    }
-
-    if (cells_.empty()) {
-        min_x = min_y = max_x = max_y = 0.0;
-    }
-
-    const double avg_pins_per_net =
-        nets_.empty()
-            ? 0.0
-            : static_cast<double>(pins_.size()) / static_cast<double>(nets_.size());
-
-    os << std::fixed << std::setprecision(3);
-
-    os << "========== PlacementDB Summary ==========\n";
-
-    os << "\n[Basic Statistics]\n";
-    os << "Number of cells:\n";
-    os << "  total: " << cells_.size() << "\n";
-    os << "  movable: " << cells_.size() - fixed_count << "\n";
-    os << "  terminal/fixed: " << fixed_count << "\n";
-
-    os << "\nNumber of nets:\n";
-    os << "  total: " << nets_.size() << "\n";
-
-    os << "\nNumber of pins:\n";
-    os << "  total: " << pins_.size() << "\n";
-    os << "  average pins per net: " << avg_pins_per_net << "\n";
-    os << "  max pins per net: " << max_degree << "\n";
-
-    os << "\nRows:\n";
-    os << "  total: " << rows_.size() << "\n";
-
-    os << "\nPlacement region:\n";
-    os << "  min x: " << min_x << "\n";
-    os << "  max x: " << max_x << "\n";
-    os << "  min y: " << min_y << "\n";
-    os << "  max y: " << max_y << "\n";
-
-    os << "\n========================================\n";
-    os << "[Cell Dump]\n";
-    os << "Dump first " << std::min(kMaxDump, cells_.size())
-       << " / " << cells_.size() << " cells\n\n";
-
-    os << "Format:\n";
-    os << "  cell_id | name | width | height | x | y | type | orientation | is_fixed | num_pins\n\n";
-
-    for (size_t i = 0; i < std::min(kMaxDump, cells_.size()); ++i) {
-        const Cell& c = cells_[i];
-
-        os << "Cell[" << c.id << "]"
-           << " | name=" << c.name
-           << " | width=" << c.width
-           << " | height=" << c.height
-           << " | x=" << c.x
-           << " | y=" << c.y
-           << " | type=" << static_cast<int>(c.type)
-           << " | orientation=" << c.orientation
-           << " | is_fixed=" << (c.is_fixed ? "true" : "false")
-           << " | num_pins=" << c.pin_ids.size()
-           << "\n";
-    }
-
-    os << "\n========================================\n";
-    os << "[Net Dump]\n";
-    os << "Dump first " << std::min(kMaxDump, nets_.size())
-       << " / " << nets_.size() << " nets\n\n";
-
-    os << "Format:\n";
-    os << "  net_id | name | degree | HPWL |pin_ids  \n\n";
-
-    for (size_t i = 0; i < std::min(kMaxDump, nets_.size()); ++i) {
-        const Net& n = nets_[i];
-
-        os << "Net[" << n.id << "]"
-           << " | name=" << n.name
-           << " | degree=" << n.pin_ids.size()
-           << " | HPWL=" << n.hpwl
-           << " | pin_ids=[";
-
-        for (size_t j = 0; j < n.pin_ids.size(); ++j) {
-            os << n.pin_ids[j];
-            if (j + 1 < n.pin_ids.size()) {
-                os << ", ";
-            }
-        }
-
-        os << "]\n";
-    }
-
-    os << "\n========================================\n";
-    os << "[Pin Dump]\n";
-    os << "Dump first " << std::min(kMaxDump, pins_.size())
-       << " / " << pins_.size() << " pins\n\n";
-
-    os << "Format:\n";
-    os << "  pin_id | cell_id | cell_name | net_id | net_name | offset_x | offset_y | direction\n\n";
-
-    for (size_t i = 0; i < std::min(kMaxDump, pins_.size()); ++i) {
-        const Pin& p = pins_[i];
-
-        os << "Pin[" << p.id << "]"
-           << " | cell_id=" << p.cell_id
-           << " | cell_name=" << p.cell_name
-           << " | net_id=" << p.net_id
-           << " | net_name=" << p.net_name
-           << " | offset_x=" << p.offset_x
-           << " | offset_y=" << p.offset_y
-           << " | direction=" << p.direction;
-
-        if (p.cell_id >= 0 && static_cast<size_t>(p.cell_id) < cells_.size()) {
-            const Cell& c = cells_[static_cast<size_t>(p.cell_id)];
-            const Point pos = pinPosition(p.id);
-            os << " | cell_x=" << c.x
-               << " | cell_y=" << c.y
-               << " | estimated_pin_x=" << pos.x
-               << " | estimated_pin_y=" << pos.y;
-        }
-
-        os << "\n";
-    }
-
-    os << "\n========================================\n";
-    os << "[Row Dump]\n";
-    os << "Dump first " << std::min(kMaxDump, rows_.size())
-       << " / " << rows_.size() << " rows\n\n";
-
-    os << "Format:\n";
-    os << "  row_id | y | height | site_width | site_spacing | x_start | x_end | num_sites\n\n";
-
-    for (size_t i = 0; i < std::min(kMaxDump, rows_.size()); ++i) {
-        const Row& r = rows_[i];
-
-        os << "Row[" << r.id << "]"
-           << " | y=" << r.y
-           << " | height=" << r.height
-           << " | site_width=" << r.site_width
-           << " | site_spacing=" << r.site_spacing
-           << " | x_start=" << r.x_start
-           << " | x_end=" << r.x_end
-           << " | num_sites=" << r.num_sites
-           << "\n";
-    }
-
-    os << "\n========== End of PlacementDB Summary ==========\n";
+    os << "========== PlacementDB Summary ==========\n"
+       << "cells " << cells_.size() << '\n'
+       << "movable_cells " << movable_count << '\n'
+       << "non_movable_cells "
+       << cells_.size() - movable_count << '\n'
+       << "fixed_flag_cells "
+       << fixed_flag_count << '\n'
+       << "terminal_cells "
+       << terminal_count << '\n'
+       << "terminal_NI_cells "
+       << terminal_ni_count << '\n'
+       << "nets " << nets_.size() << '\n'
+       << "pins " << pins_.size() << '\n'
+       << "rows " << rows_.size() << '\n'
+       << "max_net_degree " << max_degree << '\n'
+       << "========================================\n";
 }
 
 void PlacementDB::checkId(int id, int size, const char* kind) {

@@ -1,7 +1,169 @@
 #include "density/ExactDensityEvaluator.h"
+
 #include "density/ExactBinGrid.h"
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
-namespace { constexpr double kTol=1e-9; bool near(double a,double b){return std::abs(a-b)<=kTol*std::max({1.0,std::abs(a),std::abs(b)});} void chk(double v,const char*n){ if(!std::isfinite(v)||v < -kTol) throw std::runtime_error(std::string("ExactDensityEvaluator: invalid ")+n); } }
-ExactDensityMetrics ExactDensityEvaluator::evaluate(const ExactBinGrid& grid) const { ExactDensityMetrics m; m.bin_count=grid.bins().size(); m.total_cell_area=grid.totalCellArea(); m.total_movable_area=grid.totalMovableArea(); m.total_fixed_area=grid.totalFixedArea(); double area_sum=0, overflow_sum=0, penalty_sum=0; for(const Bin& b: grid.bins()){ double ba=b.bounds.area(); if(!(ba>0.0)||!std::isfinite(ba)) throw std::runtime_error("ExactDensityEvaluator: bin area must be positive"); chk(b.total_area,"bin total area"); if(!near(b.total_area,b.movable_area+b.fixed_area)) throw std::runtime_error("ExactDensityEvaluator: bin area split mismatch"); double of=std::max(0.0,b.total_area-b.target_capacity); if(!near(of,b.overflow)) throw std::runtime_error("ExactDensityEvaluator: bin overflow mismatch"); m.total_capacity+=b.target_capacity; overflow_sum+=of; penalty_sum+=of*of; if(of>0.0) ++m.overflow_bin_count; m.maximum_bin_density=std::max(m.maximum_bin_density,b.total_area/ba); area_sum+=b.total_area; } m.total_overflow=overflow_sum; m.quadratic_penalty=penalty_sum; m.overflow_ratio=(m.total_movable_area>0.0)?m.total_overflow/m.total_movable_area:0.0; m.average_bin_density = grid.coreBounds().area()>0.0 ? area_sum/grid.coreBounds().area() : 0.0; chk(m.total_overflow,"total overflow"); chk(m.quadratic_penalty,"quadratic penalty"); return m; }
+#include <string>
+
+namespace
+{
+
+constexpr double kRelativeTolerance = 1e-9;
+
+bool near(double lhs, double rhs)
+{
+    return std::abs(lhs - rhs) <=
+           kRelativeTolerance *
+               std::max({1.0, std::abs(lhs), std::abs(rhs)});
+}
+
+void requireFiniteNonnegative(
+    double value,
+    const std::string& name
+)
+{
+    if (!std::isfinite(value) ||
+        value < -kRelativeTolerance) {
+        throw std::runtime_error(
+            "ExactDensityEvaluator: invalid " + name
+        );
+    }
+}
+
+} // namespace
+
+ExactDensityMetrics ExactDensityEvaluator::evaluate(
+    const ExactBinGrid& grid
+) const
+{
+    ExactDensityMetrics metrics;
+
+    metrics.bin_count = grid.bins().size();
+
+    metrics.total_cell_area =
+        grid.totalCellArea();
+
+    metrics.total_movable_area =
+        grid.totalMovableArea();
+
+    metrics.total_non_movable_area =
+        grid.totalNonMovableArea();
+
+    double area_sum = 0.0;
+    double overflow_sum = 0.0;
+    double penalty_sum = 0.0;
+
+    for (const Bin& bin : grid.bins()) {
+        const double bin_area =
+            bin.bounds.area();
+
+        if (!(bin_area > 0.0) ||
+            !std::isfinite(bin_area)) {
+            throw std::runtime_error(
+                "ExactDensityEvaluator: "
+                "bin area must be positive"
+            );
+        }
+
+        requireFiniteNonnegative(
+            bin.total_area,
+            "bin total area"
+        );
+
+        requireFiniteNonnegative(
+            bin.movable_area,
+            "bin movable area"
+        );
+
+        requireFiniteNonnegative(
+            bin.fixed_area,
+            "bin non-movable area"
+        );
+
+        if (!near(
+                bin.total_area,
+                bin.movable_area + bin.fixed_area)) {
+            throw std::runtime_error(
+                "ExactDensityEvaluator: "
+                "bin area split mismatch"
+            );
+        }
+
+        const double overflow =
+            std::max(
+                0.0,
+                bin.total_area -
+                    bin.target_capacity
+            );
+
+        if (!near(overflow, bin.overflow)) {
+            throw std::runtime_error(
+                "ExactDensityEvaluator: "
+                "bin overflow mismatch"
+            );
+        }
+
+        metrics.total_capacity +=
+            bin.target_capacity;
+
+        overflow_sum += overflow;
+        penalty_sum += overflow * overflow;
+
+        if (overflow > 0.0) {
+            ++metrics.overflow_bin_count;
+        }
+
+        metrics.maximum_bin_density =
+            std::max(
+                metrics.maximum_bin_density,
+                bin.total_area / bin_area
+            );
+
+        area_sum += bin.total_area;
+    }
+
+    metrics.total_overflow =
+        overflow_sum;
+
+    metrics.quadratic_penalty =
+        penalty_sum;
+
+    if (metrics.total_movable_area > 0.0) {
+        metrics.overflow_ratio =
+            metrics.total_overflow /
+            metrics.total_movable_area;
+
+        metrics.overflow_ratio_defined = true;
+    } else {
+        metrics.overflow_ratio = 0.0;
+        metrics.overflow_ratio_defined = false;
+    }
+
+    const double core_area =
+        grid.coreBounds().area();
+
+    if (!(core_area > 0.0) ||
+        !std::isfinite(core_area)) {
+        throw std::runtime_error(
+            "ExactDensityEvaluator: "
+            "invalid placement core area"
+        );
+    }
+
+    metrics.average_bin_density =
+        area_sum / core_area;
+
+    requireFiniteNonnegative(
+        metrics.total_overflow,
+        "total overflow"
+    );
+
+    requireFiniteNonnegative(
+        metrics.quadratic_penalty,
+        "quadratic penalty"
+    );
+
+    return metrics;
+}

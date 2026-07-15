@@ -6,32 +6,36 @@
 #include <cmath>
 #include <string>
 
-namespace {
-bool near(double actual, double expected) {
-    return std::abs(actual - expected) < 1e-9;
+namespace
+{
+    bool near(double actual, double expected)
+    {
+        return std::abs(actual - expected) < 1e-9;
+    }
+
+    void expectNear(double actual, double expected)
+    {
+        assert(near(actual, expected));
+    }
+
+    int addPlacedCell(
+        PlacementDB &db,
+        const std::string &name,
+        double width,
+        double height,
+        double x,
+        double y,
+        CellType type = CellType::Standard,
+        bool fixed = false)
+    {
+        const int cell_id = db.addCell(name, width, height, type);
+        db.setCellLocation(name, x, y, fixed);
+        return cell_id;
+    }
 }
 
-void expectNear(double actual, double expected) {
-    assert(near(actual, expected));
-}
-
-int addPlacedCell(
-    PlacementDB& db,
-    const std::string& name,
-    double width,
-    double height,
-    double x,
-    double y,
-    CellType type = CellType::Standard,
-    bool fixed = false
-) {
-    const int cell_id = db.addCell(name, width, height, type);
-    db.setCellLocation(name, x, y, fixed);
-    return cell_id;
-}
-}
-
-int main() {
+int main()
+{
     HPWLEvaluator evaluator;
 
     {
@@ -57,8 +61,8 @@ int main() {
         const int a = addPlacedCell(db, "a", 10.0, 10.0, 0.0, 0.0);
         const int b = addPlacedCell(db, "b", 8.0, 4.0, 10.0, 20.0);
         const int net = db.addNet("offset_net");
-        db.addPin(a, net, -2.0, 3.0, "I");   // (3, 8)
-        db.addPin(b, net, 6.0, -5.0, "O");   // (20, 17)
+        db.addPin(a, net, -2.0, 3.0, "I"); // (3, 8)
+        db.addPin(b, net, 6.0, -5.0, "O"); // (20, 17)
         expectNear(evaluator.netHPWL(db, net), 26.0);
     }
 

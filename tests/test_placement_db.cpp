@@ -3,14 +3,21 @@
 #include <cassert>
 #include <sstream>
 
-int main() {
+int main()
+{
     PlacementDB db;
     int c0 = db.addCell("a", 10, 20, CellType::Standard);
     int c1 = db.addCell("b", 5, 5, CellType::Terminal);
     int n0 = db.addNet("n");
     int p0 = db.addPin(c0, n0, 1.5, -2.0, "I");
     db.addPin(c1, n0, 0.0, 0.0, "O");
-    Row row; row.y = 0; row.height = 10; row.site_width = 1; row.site_spacing = 1; row.x_start = 0; row.num_sites = 100;
+    Row row;
+    row.y = 0;
+    row.height = 10;
+    row.site_width = 1;
+    row.site_spacing = 1;
+    row.x_start = 0;
+    row.num_sites = 100;
     db.addRow(row);
     db.setCellLocation("a", 3, 4, false);
     assert(db.getCellId("a") == c0);

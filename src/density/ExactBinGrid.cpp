@@ -1,13 +1,427 @@
 #include "density/ExactBinGrid.h"
+
 #include "db/Cell.h"
 #include "db/PlacementDB.h"
+
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <stdexcept>
-namespace { constexpr double kTol=1e-9; void finiteNonneg(double v,const char* n){ if(!std::isfinite(v)||v < -kTol) throw std::runtime_error(std::string("ExactBinGrid: invalid ")+n); } double overlap(const Box&a,const Box&b){ double ox=std::min(a.ux,b.ux)-std::max(a.lx,b.lx); double oy=std::min(a.uy,b.uy)-std::max(a.ly,b.ly); return (ox>0.0&&oy>0.0)?ox*oy:0.0;} bool near(double a,double b){return std::abs(a-b)<=kTol*std::max({1.0,std::abs(a),std::abs(b)});} }
-ExactBinGrid::ExactBinGrid(const PlacementDB& db,int bx,int by,double td):bins_x_(bx),bins_y_(by),target_density_(td){ if(bx<=0||by<=0) throw std::invalid_argument("ExactBinGrid: bins_x and bins_y must be positive"); if(!std::isfinite(td)||td<=0.0||td>1.0) throw std::invalid_argument("ExactBinGrid: target_density must satisfy 0 < value <= 1"); rebuild(db); }
-const Bin& ExactBinGrid::bin(int id) const { if(id<0||id>=static_cast<int>(bins_.size())) throw std::out_of_range("ExactBinGrid::bin: invalid bin id"); return bins_[id]; }
-void ExactBinGrid::rebuild(const PlacementDB& db){ core_=db.coreBounds(); if(!core_.valid()||!std::isfinite(core_.area())) throw std::runtime_error("ExactBinGrid: invalid core bounds"); bin_width_=core_.width()/bins_x_; bin_height_=core_.height()/bins_y_; if(!(bin_width_>0.0)||!(bin_height_>0.0)||!std::isfinite(bin_width_)||!std::isfinite(bin_height_)) throw std::runtime_error("ExactBinGrid: invalid bin dimensions"); bins_.clear(); bins_.reserve(static_cast<size_t>(bins_x_*bins_y_)); for(int iy=0;iy<bins_y_;++iy){ for(int ix=0;ix<bins_x_;++ix){ Bin b; b.id=iy*bins_x_+ix; b.ix=ix; b.iy=iy; b.bounds.lx=core_.lx+ix*bin_width_; b.bounds.ly=core_.ly+iy*bin_height_; b.bounds.ux=(ix==bins_x_-1)?core_.ux:core_.lx+(ix+1)*bin_width_; b.bounds.uy=(iy==bins_y_-1)?core_.uy:core_.ly+(iy+1)*bin_height_; const double area=b.bounds.area(); if(!(area>0.0)||!std::isfinite(area)) throw std::runtime_error("ExactBinGrid: bin area must be positive"); b.target_capacity=target_density_*area; bins_.push_back(std::move(b)); }} total_cell_area_=total_movable_area_=total_fixed_area_=0.0; double expected_total=0, expected_movable=0, expected_fixed=0; for(const Cell& c: db.cells()){ if(!std::isfinite(c.x)||!std::isfinite(c.y)||!std::isfinite(c.width)||!std::isfinite(c.height)||c.width<0.0||c.height<0.0) throw std::runtime_error("ExactBinGrid: invalid cell geometry for "+c.name); Box cb{c.x,c.y,c.x+c.width,c.y+c.height}; Box clipped{std::max(cb.lx,core_.lx),std::max(cb.ly,core_.ly),std::min(cb.ux,core_.ux),std::min(cb.uy,core_.uy)}; if(!clipped.valid()) continue; const double clipped_area=clipped.area(); expected_total+=clipped_area; if(c.isMovable()) expected_movable+=clipped_area; else expected_fixed+=clipped_area; int ix0=std::max(0, static_cast<int>(std::floor((clipped.lx-core_.lx)/bin_width_))); int iy0=std::max(0, static_cast<int>(std::floor((clipped.ly-core_.ly)/bin_height_))); int ix1=std::min(bins_x_-1, static_cast<int>(std::ceil((clipped.ux-core_.lx)/bin_width_))-1); int iy1=std::min(bins_y_-1, static_cast<int>(std::ceil((clipped.uy-core_.ly)/bin_height_))-1); for(int iy=iy0;iy<=iy1;++iy) for(int ix=ix0;ix<=ix1;++ix){ Bin& b=bins_[iy*bins_x_+ix]; double a=overlap(cb,b.bounds); if(a>0.0){ finiteNonneg(a,"overlap area"); b.total_area+=a; if(c.isMovable()) b.movable_area+=a; else b.fixed_area+=a; b.overlapping_cell_ids.push_back(c.id); } } }
- for(Bin& b: bins_){ if(!near(b.total_area,b.movable_area+b.fixed_area)) throw std::runtime_error("ExactBinGrid: bin area split mismatch"); b.overflow=std::max(0.0,b.total_area-b.target_capacity); b.density_ratio=b.total_area/b.bounds.area(); total_cell_area_+=b.total_area; total_movable_area_+=b.movable_area; total_fixed_area_+=b.fixed_area; }
- if(!near(total_cell_area_,expected_total)||!near(total_movable_area_,expected_movable)||!near(total_fixed_area_,expected_fixed)) throw std::runtime_error("ExactBinGrid: clipped area conservation mismatch"); }
+#include <string>
+
+namespace
+{
+
+constexpr double kRelativeTolerance = 1e-9;
+
+bool near(double lhs, double rhs)
+{
+    return std::abs(lhs - rhs) <=
+           kRelativeTolerance *
+               std::max({1.0, std::abs(lhs), std::abs(rhs)});
+}
+
+void requireFiniteNonnegative(
+    double value,
+    const std::string& name
+)
+{
+    if (!std::isfinite(value) ||
+        value < -kRelativeTolerance) {
+        throw std::runtime_error(
+            "ExactBinGrid: invalid " + name
+        );
+    }
+}
+
+double exactOverlapArea(
+    const Box& first,
+    const Box& second
+)
+{
+    const double overlap_x =
+        std::min(first.ux, second.ux) -
+        std::max(first.lx, second.lx);
+
+    const double overlap_y =
+        std::min(first.uy, second.uy) -
+        std::max(first.ly, second.ly);
+
+    if (overlap_x <= 0.0 || overlap_y <= 0.0) {
+        return 0.0;
+    }
+
+    return overlap_x * overlap_y;
+}
+
+Box clipToCore(
+    const Box& object_box,
+    const Box& core
+)
+{
+    return Box{
+        std::max(object_box.lx, core.lx),
+        std::max(object_box.ly, core.ly),
+        std::min(object_box.ux, core.ux),
+        std::min(object_box.uy, core.uy)
+    };
+}
+
+} // namespace
+
+ExactBinGrid::ExactBinGrid(
+    const PlacementDB& db,
+    int bins_x,
+    int bins_y,
+    double target_density
+)
+    : bins_x_(bins_x),
+      bins_y_(bins_y),
+      target_density_(target_density)
+{
+    if (bins_x_ <= 0 || bins_y_ <= 0) {
+        throw std::invalid_argument(
+            "ExactBinGrid: bins_x and bins_y must be positive"
+        );
+    }
+
+    if (!std::isfinite(target_density_) ||
+        target_density_ <= 0.0 ||
+        target_density_ > 1.0) {
+        throw std::invalid_argument(
+            "ExactBinGrid: target_density must satisfy "
+            "0 < value <= 1"
+        );
+    }
+
+    rebuild(db);
+}
+
+const Bin& ExactBinGrid::bin(int id) const
+{
+    if (id < 0 ||
+        id >= static_cast<int>(bins_.size())) {
+        throw std::out_of_range(
+            "ExactBinGrid::bin: invalid bin id"
+        );
+    }
+
+    return bins_[static_cast<std::size_t>(id)];
+}
+
+void ExactBinGrid::rebuild(const PlacementDB& db)
+{
+    core_ = db.coreBounds();
+
+    if (!core_.valid() ||
+        !std::isfinite(core_.area())) {
+        throw std::runtime_error(
+            "ExactBinGrid: invalid core bounds"
+        );
+    }
+
+    bin_width_ =
+        core_.width() / static_cast<double>(bins_x_);
+
+    bin_height_ =
+        core_.height() / static_cast<double>(bins_y_);
+
+    if (!(bin_width_ > 0.0) ||
+        !(bin_height_ > 0.0) ||
+        !std::isfinite(bin_width_) ||
+        !std::isfinite(bin_height_)) {
+        throw std::runtime_error(
+            "ExactBinGrid: invalid bin dimensions"
+        );
+    }
+
+    bins_.clear();
+    bins_.reserve(
+        static_cast<std::size_t>(bins_x_) *
+        static_cast<std::size_t>(bins_y_)
+    );
+
+    for (int iy = 0; iy < bins_y_; ++iy) {
+        for (int ix = 0; ix < bins_x_; ++ix) {
+            Bin bin;
+
+            bin.id = iy * bins_x_ + ix;
+            bin.ix = ix;
+            bin.iy = iy;
+
+            bin.bounds.lx =
+                core_.lx +
+                static_cast<double>(ix) * bin_width_;
+
+            bin.bounds.ly =
+                core_.ly +
+                static_cast<double>(iy) * bin_height_;
+
+            bin.bounds.ux =
+                (ix == bins_x_ - 1)
+                    ? core_.ux
+                    : core_.lx +
+                          static_cast<double>(ix + 1) *
+                              bin_width_;
+
+            bin.bounds.uy =
+                (iy == bins_y_ - 1)
+                    ? core_.uy
+                    : core_.ly +
+                          static_cast<double>(iy + 1) *
+                              bin_height_;
+
+            const double bin_area = bin.bounds.area();
+
+            if (!(bin_area > 0.0) ||
+                !std::isfinite(bin_area)) {
+                throw std::runtime_error(
+                    "ExactBinGrid: bin area must be positive"
+                );
+            }
+
+            bin.target_capacity =
+                target_density_ * bin_area;
+
+            bins_.push_back(std::move(bin));
+        }
+    }
+
+    total_cell_area_ = 0.0;
+    total_movable_area_ = 0.0;
+    total_non_movable_area_ = 0.0;
+
+    raw_movable_area_ = 0.0;
+    raw_non_movable_area_ = 0.0;
+
+    movable_cell_count_ = 0;
+    non_movable_cell_count_ = 0;
+
+    movable_inside_core_count_ = 0;
+    movable_outside_core_count_ = 0;
+
+    non_movable_inside_core_count_ = 0;
+    non_movable_outside_core_count_ = 0;
+
+    double expected_total_area = 0.0;
+    double expected_movable_area = 0.0;
+    double expected_non_movable_area = 0.0;
+
+    for (const Cell& cell : db.cells()) {
+        if (!std::isfinite(cell.x) ||
+            !std::isfinite(cell.y) ||
+            !std::isfinite(cell.width) ||
+            !std::isfinite(cell.height) ||
+            cell.width < 0.0 ||
+            cell.height < 0.0) {
+            throw std::runtime_error(
+                "ExactBinGrid: invalid cell geometry for " +
+                cell.name
+            );
+        }
+
+        const double raw_area =
+            cell.width * cell.height;
+
+        requireFiniteNonnegative(
+            raw_area,
+            "raw cell area"
+        );
+
+        if (cell.isMovable()) {
+            ++movable_cell_count_;
+            raw_movable_area_ += raw_area;
+        } else {
+            ++non_movable_cell_count_;
+            raw_non_movable_area_ += raw_area;
+        }
+
+        const Box cell_box{
+            cell.x,
+            cell.y,
+            cell.x + cell.width,
+            cell.y + cell.height
+        };
+
+        const Box clipped =
+            clipToCore(cell_box, core_);
+
+        if (!clipped.valid()) {
+            if (cell.isMovable()) {
+                ++movable_outside_core_count_;
+            } else {
+                ++non_movable_outside_core_count_;
+            }
+
+            continue;
+        }
+
+        const double clipped_area =
+            clipped.area();
+
+        requireFiniteNonnegative(
+            clipped_area,
+            "clipped cell area"
+        );
+
+        if (cell.isMovable()) {
+            ++movable_inside_core_count_;
+            expected_movable_area += clipped_area;
+        } else {
+            ++non_movable_inside_core_count_;
+            expected_non_movable_area += clipped_area;
+        }
+
+        expected_total_area += clipped_area;
+
+        int ix_begin = static_cast<int>(
+            std::floor(
+                (clipped.lx - core_.lx) /
+                bin_width_
+            )
+        );
+
+        int iy_begin = static_cast<int>(
+            std::floor(
+                (clipped.ly - core_.ly) /
+                bin_height_
+            )
+        );
+
+        int ix_end = static_cast<int>(
+            std::ceil(
+                (clipped.ux - core_.lx) /
+                bin_width_
+            )
+        ) - 1;
+
+        int iy_end = static_cast<int>(
+            std::ceil(
+                (clipped.uy - core_.ly) /
+                bin_height_
+            )
+        ) - 1;
+
+        ix_begin = std::clamp(
+            ix_begin,
+            0,
+            bins_x_ - 1
+        );
+
+        iy_begin = std::clamp(
+            iy_begin,
+            0,
+            bins_y_ - 1
+        );
+
+        ix_end = std::clamp(
+            ix_end,
+            0,
+            bins_x_ - 1
+        );
+
+        iy_end = std::clamp(
+            iy_end,
+            0,
+            bins_y_ - 1
+        );
+
+        for (int iy = iy_begin; iy <= iy_end; ++iy) {
+            for (int ix = ix_begin; ix <= ix_end; ++ix) {
+                Bin& bin =
+                    bins_[static_cast<std::size_t>(
+                        iy * bins_x_ + ix
+                    )];
+
+                const double overlap_area =
+                    exactOverlapArea(
+                        clipped,
+                        bin.bounds
+                    );
+
+                if (overlap_area <= 0.0) {
+                    continue;
+                }
+
+                requireFiniteNonnegative(
+                    overlap_area,
+                    "cell-bin overlap area"
+                );
+
+                bin.total_area += overlap_area;
+
+                if (cell.isMovable()) {
+                    bin.movable_area += overlap_area;
+                } else {
+                    // In the current data model this means all
+                    // non-movable objects, including terminals.
+                    bin.fixed_area += overlap_area;
+                }
+
+                bin.overlapping_cell_ids.push_back(
+                    cell.id
+                );
+            }
+        }
+    }
+
+    for (Bin& bin : bins_) {
+        if (!near(
+                bin.total_area,
+                bin.movable_area + bin.fixed_area)) {
+            throw std::runtime_error(
+                "ExactBinGrid: bin area split mismatch "
+                "for bin " +
+                std::to_string(bin.id)
+            );
+        }
+
+        bin.overflow = std::max(
+            0.0,
+            bin.total_area - bin.target_capacity
+        );
+
+        bin.density_ratio =
+            bin.total_area / bin.bounds.area();
+
+        total_cell_area_ += bin.total_area;
+        total_movable_area_ += bin.movable_area;
+        total_non_movable_area_ += bin.fixed_area;
+    }
+
+    if (!near(
+            total_cell_area_,
+            expected_total_area)) {
+        throw std::runtime_error(
+            "ExactBinGrid: total clipped area "
+            "conservation mismatch"
+        );
+    }
+
+    if (!near(
+            total_movable_area_,
+            expected_movable_area)) {
+        throw std::runtime_error(
+            "ExactBinGrid: movable clipped area "
+            "conservation mismatch"
+        );
+    }
+
+    if (!near(
+            total_non_movable_area_,
+            expected_non_movable_area)) {
+        throw std::runtime_error(
+            "ExactBinGrid: non-movable clipped area "
+            "conservation mismatch"
+        );
+    }
+
+    if (!near(
+            total_cell_area_,
+            total_movable_area_ +
+                total_non_movable_area_)) {
+        throw std::runtime_error(
+            "ExactBinGrid: total area does not equal "
+            "movable plus non-movable area"
+        );
+    }
+}
