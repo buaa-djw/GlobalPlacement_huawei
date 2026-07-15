@@ -54,6 +54,18 @@ endif()
 add_executable(global_placer main.cpp)
 target_link_libraries(global_placer PRIVATE placement_core)
 
+# Development-only implementation diagnostic executable.
+# It does not replace the official global_placer output.
+add_executable(
+  placement_diagnostics
+  /home/djw/Desktop/GlobalPlacement_huawei/tools/implementation_diagnostics.cpp
+)
+
+target_link_libraries(
+  placement_diagnostics
+  PRIVATE placement_core
+)
+
 include(CTest)
 if(BUILD_TESTING)
   foreach(t placement_db hpwl exact_bin_grid exact_density_evaluator exact_density_subgradient exact_wirelength_subgradient nonsmooth_objective adaptec2_smoke)
