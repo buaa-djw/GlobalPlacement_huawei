@@ -12,6 +12,5 @@ struct Bin {
     double fixed_area = 0.0;
     double target_capacity = 0.0;
     double overflow = 0.0;
-    double density_ratio = 0.0;
     std::vector<int> overlapping_cell_ids;
 };

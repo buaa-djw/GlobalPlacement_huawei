@@ -7,7 +7,6 @@
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
-#include <map>
 #include <stdexcept>
 #include <string>
 
@@ -93,113 +92,8 @@ int main(int argc, char** argv)
             );
         }
 
-        std::size_t standard_count = 0;
-        std::size_t terminal_count = 0;
-        std::size_t terminal_ni_count = 0;
-
-        std::size_t movable_count = 0;
-        std::size_t non_movable_count = 0;
-        std::size_t fixed_flag_count = 0;
-
-        std::map<std::string, std::size_t>
-            orientation_counts;
-
-        for (const Cell& cell : database.cells()) {
-            switch (cell.type) {
-            case CellType::Standard:
-                ++standard_count;
-                break;
-
-            case CellType::Terminal:
-                ++terminal_count;
-                break;
-
-            case CellType::TerminalNI:
-                ++terminal_ni_count;
-                break;
-            }
-
-            if (cell.isMovable()) {
-                ++movable_count;
-            } else {
-                ++non_movable_count;
-            }
-
-            if (cell.is_fixed) {
-                ++fixed_flag_count;
-            }
-
-            ++orientation_counts[cell.orientation];
-        }
-
-        const Box core =
-            database.coreBounds();
-
         const HPWLEvaluator hpwl_evaluator;
-
-        const double input_hpwl =
-            hpwl_evaluator.totalHPWL(database);
-
-        std::cout
-            << std::fixed
-            << std::setprecision(6);
-
-        std::cout
-            << "==================[Database]===================\n"
-            << "cells "
-            << database.cells().size() << '\n'
-            << "standard_cells "
-            << standard_count << '\n'
-            << "terminal_cells "
-            << terminal_count << '\n'
-            << "terminal_NI_cells "
-            << terminal_ni_count << '\n'
-            << "movable_cells "
-            << movable_count << '\n'
-            << "non_movable_cells "
-            << non_movable_count << '\n'
-            << "fixed_flag_cells "
-            << fixed_flag_count << '\n'
-            << "nets "
-            << database.nets().size() << '\n'
-            << "pins "
-            << database.pins().size() << '\n'
-            << "rows "
-            << database.rows().size() << '\n'
-            << "core_bounds "
-            << core.lx << ' '
-            << core.ly << ' '
-            << core.ux << ' '
-            << core.uy << "\n\n";
-
-        std::cout
-            << "==================[Input Placement]===================\n"
-            << "input_hpwl "
-            << input_hpwl
-            << "\n\n";
-
-        std::cout
-            << "==================[Orientation Statistics]===================\n";
-
-        bool has_non_n_orientation = false;
-
-        for (const auto& [orientation, count] :
-             orientation_counts) {
-            std::cout
-                << orientation << ' '
-                << count << '\n';
-
-            if (orientation != "N") {
-                has_non_n_orientation = true;
-            }
-        }
-
-        if (has_non_n_orientation) {
-            std::cerr
-                << "Warning: non-N orientations exist; "
-                << "pin offsets are still interpreted using "
-                << "N-orientation semantics.\n";
-        }
+        const double hpwl = hpwl_evaluator.totalHPWL(database);
 
         ExactBinGrid grid(
             database,
@@ -208,84 +102,20 @@ int main(int argc, char** argv)
             options.target_density
         );
 
-        std::cout
-            << "\n==================[Core Diagnostics]===================\n"
-            << "movable_cell_count "
-            << grid.movableCellCount() << '\n'
-            << "movable_inside_core_count "
-            << grid.movableInsideCoreCount() << '\n'
-            << "movable_outside_core_count "
-            << grid.movableOutsideCoreCount() << '\n'
-            << "non_movable_cell_count "
-            << grid.nonMovableCellCount() << '\n'
-            << "non_movable_inside_core_count "
-            << grid.nonMovableInsideCoreCount() << '\n'
-            << "non_movable_outside_core_count "
-            << grid.nonMovableOutsideCoreCount() << '\n'
-            << "raw_movable_area "
-            << grid.rawMovableArea() << '\n'
-            << "raw_non_movable_area "
-            << grid.rawNonMovableArea() << '\n'
-            << "clipped_movable_area "
-            << grid.totalMovableArea() << '\n'
-            << "clipped_non_movable_area "
-            << grid.totalNonMovableArea() << '\n';
-
-        if (grid.movableCellCount() > 0 &&
-            grid.totalMovableArea() <= 0.0) {
-            std::cerr
-                << "Warning: the database contains movable cells, "
-                << "but none has positive overlap with the "
-                << "placement core. Density OFR is undefined for "
-                << "this input placement. An initial placement is "
-                << "required before density optimization.\n";
-        }
-
-        const ExactDensityMetrics metrics =
+        const ExactDensityResult density =
             ExactDensityEvaluator().evaluate(grid);
 
         std::cout
-            << "\n==================[Exact Density]===================\n"
-            << "bins_x "
-            << grid.numBinsX() << '\n'
-            << "bins_y "
-            << grid.numBinsY() << '\n'
-            << "bin_width "
-            << grid.binWidth() << '\n'
-            << "bin_height "
-            << grid.binHeight() << '\n'
-            << "target_density "
-            << grid.targetDensity() << '\n'
-            << "total_cell_area "
-            << metrics.total_cell_area << '\n'
-            << "total_movable_area "
-            << metrics.total_movable_area << '\n'
-            << "total_non_movable_area "
-            << metrics.total_non_movable_area << '\n'
-            << "total_capacity "
-            << metrics.total_capacity << '\n'
-            << "total_overflow "
-            << metrics.total_overflow << '\n';
-
-        std::cout << "overflow_ratio ";
-
-        if (metrics.overflow_ratio_defined) {
-            std::cout
-                << metrics.overflow_ratio
-                << '\n';
-        } else {
-            std::cout << "N/A\n";
-        }
-
-        std::cout
-            << "quadratic_penalty "
-            << metrics.quadratic_penalty << '\n'
-            << "overflow_bin_count "
-            << metrics.overflow_bin_count << '\n'
-            << "maximum_bin_density "
-            << metrics.maximum_bin_density << '\n'
-            << "average_bin_density "
-            << metrics.average_bin_density << '\n';
+            << std::fixed
+            << std::setprecision(6)
+            << "==================[Placement Result]===================\n"
+            << "HPWL "
+            << hpwl
+            << '\n'
+            << std::setprecision(12)
+            << "OFR "
+            << density.ofr
+            << '\n';
 
         return 0;
     } catch (const std::exception& error) {

@@ -2,6 +2,7 @@
 
 #include "db/Cell.h"
 #include "db/PlacementDB.h"
+#include "density/PaperOverlapFunction.h"
 
 #include <algorithm>
 #include <cmath>
@@ -33,25 +34,24 @@ void requireFiniteNonnegative(
     }
 }
 
-double exactOverlapArea(
-    const Box& first,
-    const Box& second
+double paperOverlapArea(
+    const Cell& cell,
+    const Bin& bin
 )
 {
-    const double overlap_x =
-        std::min(first.ux, second.ux) -
-        std::max(first.lx, second.lx);
+    const double cell_center_x = cell.x + 0.5 * cell.width;
+    const double cell_center_y = cell.y + 0.5 * cell.height;
+    const double bin_center_x = 0.5 * (bin.bounds.lx + bin.bounds.ux);
+    const double bin_center_y = 0.5 * (bin.bounds.ly + bin.bounds.uy);
 
-    const double overlap_y =
-        std::min(first.uy, second.uy) -
-        std::max(first.ly, second.ly);
-
-    if (overlap_x <= 0.0 || overlap_y <= 0.0) {
-        return 0.0;
-    }
+    const double overlap_x = paperAxisOverlapLength(
+        cell_center_x, cell.width, bin_center_x, bin.bounds.width());
+    const double overlap_y = paperAxisOverlapLength(
+        cell_center_y, cell.height, bin_center_y, bin.bounds.height());
 
     return overlap_x * overlap_y;
 }
+
 
 Box clipToCore(
     const Box& object_box,
@@ -333,10 +333,7 @@ void ExactBinGrid::rebuild(const PlacementDB& db)
                     )];
 
                 const double overlap_area =
-                    exactOverlapArea(
-                        clipped,
-                        bin.bounds
-                    );
+                    paperOverlapArea(cell, bin);
 
                 if (overlap_area <= 0.0) {
                     continue;
@@ -379,9 +376,6 @@ void ExactBinGrid::rebuild(const PlacementDB& db)
             0.0,
             bin.total_area - bin.target_capacity
         );
-
-        bin.density_ratio =
-            bin.total_area / bin.bounds.area();
 
         total_cell_area_ += bin.total_area;
         total_movable_area_ += bin.movable_area;

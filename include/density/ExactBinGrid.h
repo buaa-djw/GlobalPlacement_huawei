@@ -57,6 +57,11 @@ public:
         return raw_non_movable_area_;
     }
 
+    // Equation (18) denominator: raw area of all cells before clipping.
+    double rawTotalCellArea() const {
+        return raw_movable_area_ + raw_non_movable_area_;
+    }
+
     std::size_t movableCellCount() const {
         return movable_cell_count_;
     }

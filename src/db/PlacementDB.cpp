@@ -259,7 +259,7 @@ void PlacementDB::printSummary(std::ostream& os) const
     }
 
     os << "========== PlacementDB Summary ==========\n"
-       << "cells " << cells_.size() << '\n'
+       << "Number of cells " << cells_.size() << '\n'
        << "movable_cells " << movable_count << '\n'
        << "non_movable_cells "
        << cells_.size() - movable_count << '\n'
