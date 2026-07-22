@@ -14,6 +14,24 @@ This repository is currently a minimal C++17 placement-analysis baseline for rep
 
 The current stage intentionally does **not** include initial placement, clustering, multilevel placement, Polak--Ribiere optimization, global optimization, legalization, or detailed placement. Running the program does not modify any cell coordinates.
 
+
+## Paper Clustering Stage
+
+This repository now includes the Section IV-A / Figure 2 clustering stage from the TCAD paper:
+
+- Figure 2 Modified Best-Choice clustering with a global maximum priority queue.
+- Equation (19) clustering score evaluation.
+- Lazy invalid/valid recomputation when neighboring connectivity changes.
+- Dynamic cluster hypergraph updates after every merge.
+- Each hierarchy level targets approximately a fivefold reduction using `ceil(N/5)`.
+- The hierarchy stops when movable clusters reach the `current^2` threshold, or earlier when no positive-score candidate remains.
+- Fixed objects remain singleton clusters and do not participate in merges.
+- Quadratic initialization is still not implemented.
+- Polak--Ribiere optimization is still not implemented.
+- `global_placer` still prints only HPWL and OFR and does not modify coordinates.
+
+Implementation conventions for paper-underspecified details are documented in `docs/paper_clustering_conventions.md`.
+
 ## Build
 
 ```bash

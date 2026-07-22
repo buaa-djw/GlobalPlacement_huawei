@@ -1,0 +1,4 @@
+#include "clustering/ModifiedBestChoiceClusterer.h"
+#include <cassert>
+static int c(PlacementDB&d,const char*n){int id=d.addCell(n,1,1,CellType::Standard); d.setCellLocation(n,0,0,false); return id;} static void net(PlacementDB&d,int a,int b,const char*n){int x=d.addNet(n); d.addPin(a,x,0,0,"I"); d.addPin(b,x,0,0,"I");}
+int main(){PlacementDB db; int a=c(db,"a"),b=c(db,"b"),cc=c(db,"c"),d=c(db,"d"); net(db,cc,d,"strong1"); net(db,cc,d,"strong2"); net(db,a,b,"weak"); DynamicClusterHypergraph h(db); ModifiedBestChoiceClusterer cl; auto init=cl.initialCandidates(h); assert(init.size()==4); auto st=cl.cluster(h,3); assert(st.positive_score_merges==1); assert(st.output_movable_clusters==3); PlacementDB db2; c(db2,"x"); c(db2,"y"); DynamicClusterHypergraph h2(db2); auto st2=cl.cluster(h2,1); assert(st2.positive_score_merges==0); assert(st2.stop_reason=="nonpositive_or_no_candidate");}
