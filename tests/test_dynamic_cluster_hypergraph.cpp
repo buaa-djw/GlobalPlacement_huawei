@@ -1,0 +1,5 @@
+#include "clustering/DynamicClusterHypergraph.h"
+#include <cassert>
+#include <cmath>
+static int c(PlacementDB&d,const char*n,bool f=false){int id=d.addCell(n,1,1,CellType::Standard); d.setCellLocation(n,0,0,f); return id;} static void p(PlacementDB&d,int c,int n){d.addPin(c,n,0,0,"I");}
+int main(){PlacementDB db; int a=c(db,"a"),b=c(db,"b"),cc=c(db,"c"),f=c(db,"f",true); int n=db.addNet("n"); p(db,a,n);p(db,b,n);p(db,cc,n);p(db,f,n);p(db,a,n); DynamicClusterHypergraph h(db); assert(h.checkNoDuplicateActiveNetIncidence()); assert(std::abs(h.internalDegree(a,b)-1.0/3)<1e-12); assert(std::abs(h.externalDegree(a)-1)<1e-12); int ab=h.mergeClusters(a,b); assert(h.clusters()[ab].area==2); assert(h.clusters()[ab].original_cell_ids.size()==2); auto ids=h.nets()[n].cluster_ids; assert(ids.size()==3); assert(h.clusters()[f].active&&!h.clusters()[f].movable&&h.clusters()[f].original_cell_ids.size()==1); bool th=false; try{h.mergeClusters(ab,f);}catch(...){th=true;} assert(th); int nc=db.addNet("m"); (void)nc; }

@@ -41,6 +41,11 @@ add_library(placement_core STATIC
   src/density/ExactDensitySubgradient.cpp
   src/wirelength/ExactWirelengthSubgradient.cpp
   src/objective/NonsmoothObjectiveEvaluator.cpp
+  src/clustering/ClusterScoreEvaluator.cpp
+  src/clustering/PaperReferencedConnectivityModel.cpp
+  src/clustering/DynamicClusterHypergraph.cpp
+  src/clustering/ModifiedBestChoiceClusterer.cpp
+  src/clustering/PlacementHierarchy.cpp
 )
 
 target_include_directories(placement_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIMBO_INCLUDE_DIR})
@@ -58,7 +63,7 @@ target_link_libraries(global_placer PRIVATE placement_core)
 # It does not replace the official global_placer output.
 add_executable(
   placement_diagnostics
-  /home/djw/Desktop/GlobalPlacement_huawei/tools/implementation_diagnostics.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/implementation_diagnostics.cpp
 )
 
 target_link_libraries(
@@ -66,9 +71,12 @@ target_link_libraries(
   PRIVATE placement_core
 )
 
+add_executable(clustering_diagnostics ${CMAKE_CURRENT_SOURCE_DIR}/tools/clustering_diagnostics.cpp)
+target_link_libraries(clustering_diagnostics PRIVATE placement_core)
+
 include(CTest)
 if(BUILD_TESTING)
-  foreach(t placement_db hpwl exact_bin_grid exact_density_evaluator exact_density_subgradient exact_wirelength_subgradient nonsmooth_objective adaptec2_smoke)
+  foreach(t placement_db hpwl exact_bin_grid exact_density_evaluator exact_density_subgradient exact_wirelength_subgradient nonsmooth_objective adaptec2_smoke cluster_score_evaluator dynamic_cluster_hypergraph modified_best_choice_clusterer placement_hierarchy)
     add_executable(test_${t} tests/test_${t}.cpp)
     target_link_libraries(test_${t} PRIVATE placement_core)
     add_test(NAME ${t}_unit COMMAND test_${t})
